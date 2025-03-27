@@ -1,21 +1,31 @@
 {% extends "schedules/base.html" %}
 
-{% block title %}Your Events{% endblock %}
+{% block title %}Event List{% endblock %}
 
 {% block content %}
 <div class="container">
     <h2 class="mb-4">Your Events</h2>
-    <ul class="list-group">
-        {% for event in events %}
-            <li class="list-group-item">
-                {{ event.title }} - {{ event.date }}
-                <a href="{% url 'event_edit' event.id %}" class="btn btn-warning btn-sm">Edit</a>
-                <a href="{% url 'event_delete' event.id %}" class="btn btn-danger btn-sm">Delete</a>
-            </li>
-        {% empty %}
-            <p>No events found.</p>
-        {% endfor %}
-    </ul>
-    <a href="{% url 'event_create' %}" class="btn btn-success mt-3">Create New Event</a>
+    <table class="table">
+        <thead>
+            <tr>
+                <th>Event Name</th>
+                <th>Event Date</th>
+                <th>Actions</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for event in events %}
+            <tr>
+                <td>{{ event.name }}</td>
+                <td>{{ event.date }}</td>
+                <td>
+                    <a href="{% url 'event_edit' pk=event.pk %}" class="btn btn-warning btn-sm">Edit</a>
+                    <a href="{% url 'event_delete' pk=event.pk %}" class="btn btn-danger btn-sm" onclick="return confirm('Are you sure you want to delete this event?')">Delete</a>
+                    <a href="{% url 'share_event' pk=event.pk %}" class="btn btn-info btn-sm">Share</a>
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
 </div>
 {% endblock %}
