@@ -4,10 +4,11 @@ from .views import register
 
 urlpatterns = [
     path('', views.event_list, name='event_list'),
-    path('event/new/', views.event_create, name='event_create'),
-    path('event/<int:pk>/edit/', views.event_update, name='event_edit'),
-    path('event/<int:pk>/delete/', views.event_delete, name='event_delete'),
-    path('event/<int:pk>/share/', views.share_event, name='share_event'),
+    path('events/create/', views.event_create, name='event_create'),
+    path('events/<int:pk>/edit/', views.event_update, name='event_edit'),
+    path('events/<int:pk>/delete/', views.event_delete, name='event_delete'),
+    path('events/<int:pk>/share/', views.share_event, name='share_event'),
     path("register/", register, name="register"),  
-    path('schedule/', views.schedule_view, name='schedule'),  # New URL pattern
+    path('schedule/', views.schedule_view, name='schedule'),
+    path('api/calendar-events/', views.get_calendar_events, name='get_calendar_events')
 ]
