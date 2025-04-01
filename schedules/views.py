@@ -8,9 +8,9 @@ from django.contrib.auth.models import User
 from django.http import JsonResponse
 
 @login_required
-def event_list(request):
+def home(request):
     events = Event.objects.filter(user=request.user)
-    return render(request, 'schedules/event_list.html', {'events': events})
+    return render(request, 'schedules/home.html', {'events': events})
 
 @login_required
 def event_create(request):
@@ -20,7 +20,7 @@ def event_create(request):
             event = form.save(commit=False)
             event.user = request.user
             event.save()
-            return redirect('event_list')
+            return redirect('home')
     else:
         form = EventForm()
     return render(request, 'schedules/event_form.html', {'form': form})
@@ -32,7 +32,7 @@ def event_update(request, pk):
         form = EventForm(request.POST, instance=event)
         if form.is_valid():
             form.save()
-            return redirect('event_list')
+            return redirect('home')
     else:
         form = EventForm(instance=event)
     return render(request, 'schedules/event_form.html', {'form': form})
@@ -44,7 +44,7 @@ def event_edit(request, pk):
         form = EventForm(request.POST, instance=event)
         if form.is_valid():
             form.save()
-            return redirect('event_list')
+            return redirect('home')
     else:
         form = EventForm(instance=event)
     return render(request, 'schedules/event_form.html', {'form': form})
@@ -58,7 +58,7 @@ def share_event(request, pk):
         SharedSchedule.objects.create(event=event, shared_with=shared_with)
         event.is_shared = True
         event.save()
-        return redirect('event_list')
+        return redirect('home')
     return render(request, 'schedules/share_event.html', {'event': event})
 
 def register(request):
@@ -78,7 +78,7 @@ def register(request):
 def event_delete(request, pk):
     event = get_object_or_404(Event, pk=pk, user=request.user)
     event.delete()  
-    return redirect('event_list')
+    return redirect('home')
 
 @login_required
 def schedule_view(request):
@@ -94,7 +94,7 @@ def schedule_view(request):
 def get_calendar_events(request):
     """Get all events for the logged-in user and format them for FullCalendar"""
     events = Event.objects.filter(user=request.user)
-    event_list = []
+    home = []
     
     for event in events:
         # Create base event data
@@ -127,15 +127,15 @@ def get_calendar_events(request):
             event_data['backgroundColor'] = '#28a745'  # Green for shared events
             event_data['borderColor'] = '#28a745'
             
-        event_list.append(event_data)
+        home.append(event_data)
     
-    return JsonResponse(event_list, safe=False)
+    return JsonResponse(home, safe=False)
 
 @login_required
 def get_events_api(request):
     """API endpoint to fetch events in a simple format for other applications"""
     events = Event.objects.filter(user=request.user)
-    event_list = []
+    home = []
     
     for event in events:
         event_data = {
@@ -155,6 +155,6 @@ def get_events_api(request):
         elif hasattr(event, 'end_date') and event.end_date:
             event_data['end_date'] = event.end_date.isoformat()
             
-        event_list.append(event_data)
+        home.append(event_data)
     
-    return JsonResponse(event_list, safe=False)
+    return JsonResponse(home, safe=False)
