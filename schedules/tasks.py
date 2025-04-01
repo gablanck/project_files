@@ -7,14 +7,20 @@ def send_reminder(event_id):
     event = Event.objects.get(pk=event_id)
     send_mail(
         'Event Reminder',
-        f'Your event "{event.title}" is starting soon.',
+        f'Your event "{event.title}" is happening today.',
         'from@example.com',
         [event.user.email],
         fail_silently=False,
     )
 
 def schedule_reminders():
-    now = timezone.now()
-    events = Event.objects.filter(start_time__gt=now, start_time__lte=now + timezone.timedelta(minutes=30))
+    now = timezone.now().date()  # Get current date without time
+    events = Event.objects.filter(date=now)  # Get all events for today
     for event in events:
-        schedule('schedules.tasks.send_reminder', event.pk, schedule_type='O', next_run=event.start_time - timezone.timedelta(minutes=30))
+        # Schedule reminder for today's events
+        schedule(
+            'schedules.tasks.send_reminder',
+            event.pk,
+            schedule_type='O',
+            next_run=timezone.now()  # Send reminder immediately for today's events
+        )

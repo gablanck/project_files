@@ -6,5 +6,7 @@ class SchedulesConfig(AppConfig):
     name = 'schedules'
 
     def ready(self):
-        from .tasks import schedule_reminders
-        schedule_reminders()
+        # Temporarily commented out to allow migrations
+        # from .tasks import schedule_reminders
+        # schedule_reminders()
+        pass
