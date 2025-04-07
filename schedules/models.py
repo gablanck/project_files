@@ -6,7 +6,7 @@ class Event(models.Model):
     user = models.ForeignKey(User, on_delete=models.CASCADE)
     title = models.CharField(max_length=200)
     description = models.TextField()
-    date = models.DateField(default=date.today)  # Changed from start_time and end_time
+    date = models.DateField(default=date.today)
     is_shared = models.BooleanField(default=False)
 
     def __str__(self):
@@ -18,3 +18,14 @@ class SharedSchedule(models.Model):
 
     def __str__(self):
         return f"{self.event.title} shared with {self.shared_with.username}"
+
+class Connection(models.Model):
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='connections')
+    connected_to = models.ForeignKey(User, on_delete=models.CASCADE, related_name='connected_by')
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        unique_together = ['user', 'connected_to']
+
+    def __str__(self):
+        return f"{self.user.username} -> {self.connected_to.username}"

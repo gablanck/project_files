@@ -1,0 +1,30 @@
+{% extends 'schedules/base.html' %}
+
+{% block content %}
+<div class="container mt-4">
+    <h2>My Connections</h2>
+    
+    <div class="row">
+        {% for connection in connections %}
+        <div class="col-md-4 mb-3">
+            <div class="card">
+                <div class="card-body">
+                    <h5 class="card-title">{{ connection.connected_to.username }}</h5>
+                    <p class="card-text">{{ connection.connected_to.email }}</p>
+                    <p class="card-text"><small class="text-muted">Connected since: {{ connection.created_at|date }}</small></p>
+                    <form method="POST" action="{% url 'disconnect_user' connection.connected_to.id %}">
+                        {% csrf_token %}
+                        <button type="submit" class="btn btn-danger">Disconnect</button>
+                    </form>
+                </div>
+            </div>
+        </div>
+        {% empty %}
+        <div class="col-12">
+            <p>You haven't connected with any users yet.</p>
+            <a href="{% url 'user_search' %}" class="btn btn-primary">Find Users</a>
+        </div>
+        {% endfor %}
+    </div>
+</div>
+{% endblock %}
