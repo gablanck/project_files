@@ -6,7 +6,9 @@ class Event(models.Model):
     user = models.ForeignKey(User, on_delete=models.CASCADE)
     title = models.CharField(max_length=200)
     description = models.TextField()
-    date = models.DateField(default=date.today)
+    date = models.DateField()  # Keep the DateField for the event date
+    start_time = models.TimeField()  # Change to TimeField
+    end_time = models.TimeField()    # Change to TimeField
     is_shared = models.BooleanField(default=False)
 
     def __str__(self):
