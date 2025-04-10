@@ -11,15 +11,18 @@ urlpatterns = [
     path('schedule/', views.schedule_view, name='schedule'),
 
     path('schedules/api/calendar-events/', views.get_calendar_events, name='get_calendar_events'),
+    path('schedules/update_event/<int:event_id>/', views.update_event, name='update_event'),
 
     path('api/calendar-events/', views.get_calendar_events, name='get_calendar_events'),
     path('api/calendar-events/<int:event_id>/update/', views.update_event, name='update_event'),
+    path('api/update-event/<int:event_id>/', views.update_event, name='update_event_drag'),
 
     path('users/search/', views.user_search, name='user_search'),
     path('users/connect/<int:user_id>/', views.connect_user, name='connect_user'),
     path('users/disconnect/<int:user_id>/', views.disconnect_user, name='disconnect_user'),
     path('my-connections/', views.my_connections, name='my_connections'),
 
-    path('events/<int:event_id>/edit/', views.create_or_edit_event, name='event_edit'),
+    path('notifications/', views.get_notifications, name='get_notifications'),
+
 ]
 

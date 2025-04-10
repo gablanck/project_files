@@ -13,9 +13,11 @@ from django.views.decorators.csrf import csrf_exempt
 import json
 from django.utils.dateparse import parse_datetime
 from django.views.decorators.csrf import csrf_exempt
+from django.views.decorators.http import require_POST
 from django.http import JsonResponse
 import json
-from datetime import datetime
+from datetime import datetime, timedelta
+from .models import Notification
 
 
 @login_required
@@ -29,14 +31,16 @@ def create_or_edit_event(request, event_id=None):
         event = get_object_or_404(Event, id=event_id)
         is_edit = True
     else:
-        event = Event(user=request.user)  # Ensure a new event is created
+        event = Event(user=request.user)
         is_edit = False
 
     if request.method == 'POST':
         form = EventForm(request.POST, instance=event)
         if form.is_valid():
-            form.save()
-            return redirect('home')  # Redirect after save (to the homepage or event list)
+            event = form.save(commit=False)
+            event.user = request.user
+            event.save()
+            return redirect('home')
     else:
         form = EventForm(instance=event)
 
@@ -112,27 +116,21 @@ def schedule_view(request):
     
     return render(request, 'schedules/schedule.html', {
         'user_name': request.user.username,
-        'calendar_title': 'My Schedule'
+        'calendar_title': 'My Schedule',
+        
     })
     
 @login_required
 def get_calendar_events(request):
-    # Get all events for the current user
     events = list(Event.objects.filter(user=request.user))
-
-    # Get connected users and their events
     connected_users = Connection.objects.filter(user=request.user).values_list('connected_to', flat=True)
     connected_events = Event.objects.filter(user__in=connected_users)
 
     calendar_events = []
-
-    # Combine events for the user and connected users
     all_events = events + list(connected_events)
 
     for event in all_events:
         is_owner = event.user == request.user
-
-        # Handle None start_time and end_time by providing defaults (00:00 and 23:59)
         start_dt = datetime.combine(event.date, event.start_time or time(0, 0))
         end_dt = datetime.combine(event.date, event.end_time or time(23, 59))
 
@@ -147,7 +145,39 @@ def get_calendar_events(request):
             'borderColor': '#3788d8' if is_owner else '#28a745',
             'textColor': '#ffffff',
             'editable': is_owner,
+            'extendedProps': {
+                'creatorId': str(event.user.id),  # Add this line
+                'creatorName': event.user.username  # Optional: include creator's name
+            }
         })
+        # Handle recurrence
+        if event.is_recurring and event.recurrence_end_date:
+            current_date = event.date
+            while True:
+                if event.recurrence_type == 'daily':
+                    current_date += timedelta(days=1)
+                elif event.recurrence_type == 'weekly':
+                    current_date += timedelta(weeks=1)
+                else:
+                    break
+
+                if current_date > event.recurrence_end_date:
+                    break
+
+                recur_start = datetime.combine(current_date, event.start_time or time(0, 0))
+                recur_end = datetime.combine(current_date, event.end_time or time(23, 59))
+
+                calendar_events.append({
+                    'id': f"{event.id}-{current_date.isoformat()}",  # pseudo-unique ID
+                    'title': f"{event.title} ({event.user.username})" if not is_owner else event.title,
+                    'start': recur_start.isoformat(),
+                    'end': recur_end.isoformat(),
+                    'description': event.description,
+                    'backgroundColor': '#3788d8' if is_owner else '#28a745',
+                    'borderColor': '#3788d8' if is_owner else '#28a745',
+                    'textColor': '#ffffff',
+                    'editable': False  # You can make them read-only unless you handle recurrence updates
+                })
 
     return JsonResponse(calendar_events, safe=False)
 @login_required
@@ -259,27 +289,79 @@ def update_event(request, event_id):
         try:
             data = json.loads(request.body)
             event = Event.objects.get(id=event_id, user=request.user)
+            
+            # Get the explicit date components if available
+            event_date = data.get('date')
+            start_time_str = data.get('startTime')
+            end_time_str = data.get('endTime')
+            
+            # If explicit components are provided, use them
+            if event_date and start_time_str and not data.get('preserveTime', False):
+                # Parse the date
+                from datetime import datetime, time
+                
+                # Update just the date
+                event.date = datetime.strptime(event_date, '%Y-%m-%d').date()
+                
+                # Update the time if not preserving it
+                start_time_parts = start_time_str.split(':')
+                event.start_time = time(
+                    int(start_time_parts[0]), 
+                    int(start_time_parts[1]),
+                    int(start_time_parts[2].split('.')[0]) if '.' in start_time_parts[2] else int(start_time_parts[2])
+                )
+                
+                # Update end time if provided
+                if end_time_str:
+                    end_time_parts = end_time_str.split(':')
+                    event.end_time = time(
+                        int(end_time_parts[0]), 
+                        int(end_time_parts[1]),
+                        int(end_time_parts[2].split('.')[0]) if '.' in end_time_parts[2] else int(end_time_parts[2])
+                    )
+            else:
+                # Handle the ISO string approach (but be cautious of timezone issues)
+                start = parse_datetime(data['start'])
+                end = parse_datetime(data['end']) if data.get('end') else None
+                
+                # Update the date in all cases
+                event.date = start.date()
+                
+                # Only update time if not preserving it
+                if not data.get('preserveTime', False):
+                    event.start_time = start.time()
+                    if end:
+                        event.end_time = end.time()
 
-            # Ensure the start and end are correctly parsed
-            start = parse_datetime(data['start'])
-            end = parse_datetime(data['end'])
-
-            # Update the event's date and time
-            event.date = start.date()  # Update the event date
-            event.start_time = start.time()  # Update start time
-            event.end_time = end.time()  # Update end time
             event.save()
 
-            print(f"Updated event {event.id}: {event.date} from {event.start_time} to {event.end_time}")
-            print(f"Raw start: {data['start']}")
-            print(f"Parsed start: {start} | Parsed end: {end}")
-
-            return JsonResponse({'success': True})
+            return JsonResponse({
+                'success': True,
+                'event': {
+                    'id': event.id,
+                    'title': event.title,
+                    'date': event.date.isoformat(),
+                    'start_time': event.start_time.isoformat() if event.start_time else None,
+                    'end_time': event.end_time.isoformat() if event.end_time else None
+                }
+            })
         except Exception as e:
-            print(f"Error updating event: {str(e)}")
+            import traceback
+            traceback.print_exc()
             return JsonResponse({'success': False, 'error': str(e)})
 
     return JsonResponse({'success': False, 'error': 'Invalid method'})
 
-
-
+@login_required
+def get_notifications(request):
+    notifications = Notification.objects.filter(user=request.user).order_by('-created_at')[:10]
+    data = [
+        {
+            'id': n.id,
+            'message': n.message,
+            'created_at': n.created_at.strftime('%Y-%m-%d %H:%M'),
+            'is_read': n.is_read
+        }
+        for n in notifications
+    ]
+    return JsonResponse({'notifications': data})

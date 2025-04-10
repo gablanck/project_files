@@ -17,6 +17,15 @@ class EventForm(forms.ModelForm):
         widget=forms.TimeInput(attrs={'type': 'time', 'class': 'form-control', 'step': '60'}),  # Disables seconds input
         help_text='Select the end time'
     )
+    is_recurring = forms.BooleanField(required=False, label='Repeat Event')
+    recurrence_type = forms.ChoiceField(
+        choices=[('daily', 'Daily'), ('weekly', 'Weekly')],
+        required=False
+    )
+    recurrence_end_date = forms.DateField(
+        widget=forms.DateInput(attrs={'type': 'date', 'class': 'form-control'}),
+        required=False
+    )
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -25,7 +34,7 @@ class EventForm(forms.ModelForm):
     
     class Meta:
         model = Event
-        fields = ['title', 'description', 'date', 'start_time', 'end_time']
+        fields = ['title', 'description', 'date', 'start_time', 'end_time', 'is_recurring', 'recurrence_type', 'recurrence_end_date']
     
     def clean(self):
         cleaned_data = super().clean()

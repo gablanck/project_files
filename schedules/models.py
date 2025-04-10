@@ -11,6 +11,15 @@ class Event(models.Model):
     end_time = models.TimeField()    # Change to TimeField
     is_shared = models.BooleanField(default=False)
 
+    is_recurring = models.BooleanField(default=False)
+    recurrence_type = models.CharField(
+        max_length=10,
+        choices=[('daily', 'Daily'), ('weekly', 'Weekly')],
+        blank=True,
+        null=True
+    )
+    recurrence_end_date = models.DateField(blank=True, null=True)
+
     def __str__(self):
         return self.title
 
@@ -31,3 +40,12 @@ class Connection(models.Model):
 
     def __str__(self):
         return f"{self.user.username} -> {self.connected_to.username}"
+    
+class Notification(models.Model):
+    user = models.ForeignKey(User, on_delete=models.CASCADE)
+    message = models.TextField()
+    created_at = models.DateTimeField(auto_now_add=True)
+    is_read = models.BooleanField(default=False)
+
+    def __str__(self):
+        return f"Notification for {self.user.username}: {self.message[:30]}"
