@@ -23,6 +23,10 @@ urlpatterns = [
     path('my-connections/', views.my_connections, name='my_connections'),
 
     path('notifications/', views.get_notifications, name='get_notifications'),
+    path('snooze_notification/<int:notification_id>/', views.snooze_notification, name='snooze_notification'),
+    path('notifications/mark_read/<int:notification_id>/', views.mark_notification_read, name='mark_notification_read'),
+
+    path('event/<int:event_id>/', views.event_detail, name='event_detail'),
 
 ]
 

@@ -1,6 +1,6 @@
 from django.shortcuts import render, get_object_or_404, redirect
 from django.contrib.auth.decorators import login_required
-from .models import Event, SharedSchedule, Connection
+from .models import Event, SharedSchedule, Connection, Comment
 from .forms import EventForm
 from django.contrib.auth import login
 from .forms import RegisterForm
@@ -18,6 +18,10 @@ from django.http import JsonResponse
 import json
 from datetime import datetime, timedelta
 from .models import Notification
+from django.utils.timezone import now
+from django.utils import timezone
+from .forms import CommentForm
+
 
 
 @login_required
@@ -40,6 +44,33 @@ def create_or_edit_event(request, event_id=None):
             event = form.save(commit=False)
             event.user = request.user
             event.save()
+
+            # ✅ Only create recurring events when adding a new one
+            if not is_edit and event.is_recurring and event.recurrence_type and event.recurrence_end_date:
+                from datetime import timedelta
+
+                current_date = event.date
+                while True:
+                    if event.recurrence_type == 'daily':
+                        current_date += timedelta(days=1)
+                    elif event.recurrence_type == 'weekly':
+                        current_date += timedelta(weeks=1)
+
+                    if current_date > event.recurrence_end_date:
+                        break
+
+                    # Create copies of the recurring event
+                    Event.objects.create(
+                        user=event.user,
+                        title=event.title,
+                        description=event.description,
+                        date=current_date,
+                        start_time=event.start_time,
+                        end_time=event.end_time,
+                        is_shared=event.is_shared,
+                        is_recurring=False  # prevent child events from looping
+                    )
+
             return redirect('home')
     else:
         form = EventForm(instance=event)
@@ -354,7 +385,8 @@ def update_event(request, event_id):
 
 @login_required
 def get_notifications(request):
-    notifications = Notification.objects.filter(user=request.user).order_by('-created_at')[:10]
+    notifications = Notification.objects.filter(user=request.user, is_read=False).exclude(snoozed_until__gt=timezone.now()).order_by('-created_at')[:10]
+    
     data = [
         {
             'id': n.id,
@@ -365,3 +397,55 @@ def get_notifications(request):
         for n in notifications
     ]
     return JsonResponse({'notifications': data})
+
+def snooze_notification(request, notification_id):
+    if request.user.is_authenticated:
+        minutes = int(request.GET.get('minutes', 5))  # default snooze = 5 mins
+        try:
+            notif = Notification.objects.get(id=notification_id, user=request.user)
+            notif.snoozed_until = now() + timedelta(minutes=minutes)
+            notif.save()
+            return JsonResponse({'status': 'snoozed', 'until': notif.snoozed_until})
+        except Notification.DoesNotExist:
+            return JsonResponse({'error': 'Notification not found'}, status=404)
+    return JsonResponse({'error': 'Unauthorized'}, status=403)
+
+@require_POST
+def mark_notification_read(request, notification_id):
+    if request.user.is_authenticated:
+        try:
+            notif = Notification.objects.get(id=notification_id, user=request.user)
+            notif.is_read = True
+            notif.save()
+            return JsonResponse({'status': 'marked_read'})
+        except Notification.DoesNotExist:
+            return JsonResponse({'error': 'Notification not found'}, status=404)
+    return JsonResponse({'error': 'Unauthorized'}, status=403)
+
+@login_required
+def event_detail(request, event_id):
+    event = get_object_or_404(Event, id=event_id)
+    comments = event.comments.order_by('-timestamp')
+    
+    if request.method == 'POST':
+        form = CommentForm(request.POST)
+        if form.is_valid():
+            comment = form.save(commit=False)
+            comment.user = request.user
+            comment.event = event
+            comment.save()
+            if event.user != request.user:
+                Notification.objects.create(
+                    user=event.user,
+                    message=f"New comment on your event: '{event.title}' by {request.user.username}",
+                )
+                
+            return redirect('event_detail', event_id=event_id)
+    else:
+        form = CommentForm()
+
+    return render(request, 'schedules/event_detail.html', {
+        'event': event,
+        'comments': comments,
+        'form': form
+    })

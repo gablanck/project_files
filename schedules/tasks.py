@@ -3,6 +3,8 @@ from django.core.mail import send_mail
 from django.utils import timezone
 from .models import Event, Notification
 from datetime import datetime, timedelta
+from django.utils.timezone import localtime, make_aware
+
 
 def send_reminder(event_id):
     event = Event.objects.get(pk=event_id)
@@ -26,20 +28,32 @@ def schedule_reminders():
             next_run=timezone.now()  # Send reminder immediately for today's events
         )
 
-def generate_event_notifications():
-    now = datetime.now()
-    upcoming = now + timedelta(minutes=15)
+def generate_event_notifications(*args, **kwargs):
+    local_now = localtime()
+    upcoming = local_now + timedelta(minutes=15)
 
-    events = Event.objects.filter(date=now.date(), start_time__gte=now.time(), start_time__lte=(upcoming.time()))
+    print(f"[DEBUG] local_now: {local_now}")
+    print(f"[DEBUG] upcoming: {upcoming}")
+
+    local_today = local_now.date()
+    events = Event.objects.filter(date=local_today)
+    print(f"[DEBUG] Events today: {events.count()}")
+
     for event in events:
-        Notification.objects.get_or_create(
-            user=event.user,
-            message=f"Reminder: '{event.title}' is starting soon!",
-        )
+        event_start = make_aware(datetime.combine(event.date, event.start_time))
 
-# schedule it every X minutes
-schedule(
-    'schedules.tasks.generate_event_notifications',
-    schedule_type='I',  # interval
-    minutes=1
-)
+        reminder_time = event_start - timedelta(minutes=event.reminder_minutes_before)
+        
+        print(f"[DEBUG] Checking event: {event.title} @ {event_start}")
+
+        if local_now >= reminder_time and local_now <= event_start:
+            print(f"[DEBUG] --> MATCHED: creating notification for {event.title}")
+            if not Notification.objects.filter(user=event.user, event=event).exists():
+                Notification.objects.create(
+                    user=event.user,
+                    event=event,
+                    message=f"Reminder: '{event.title}' is starting soon!",
+                    is_read=False
+                )
+        else:
+            print(f"[DEBUG] --> SKIPPED: not within 15-minute window")

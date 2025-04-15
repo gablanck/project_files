@@ -1,0 +1,163 @@
+
+{% extends "schedules/base.html" %}
+
+{% block title %}
+    {% if is_edit %}
+        Edit Event
+    {% else %}
+        Create Event
+    {% endif %}
+{% endblock %}
+
+{% block content %}
+<div class="container">
+    <h2 class="mb-4">
+        {% if is_edit %}
+            Edit Event
+        {% else %}
+            Create Event
+        {% endif %}
+    </h2>
+
+    <form method="post">
+        {% csrf_token %}
+        <div class="styled-form">
+            <p>
+                {{ form.title.label_tag }}
+                {{ form.title }}
+            </p>
+    
+            <p>
+                {{ form.description.label_tag }}
+                {{ form.description }}
+            </p>
+    
+            <div class="date-time-group">
+                <div class="form-group">
+                    {{ form.date.label_tag }}
+                    {{ form.date }}
+                    {{ form.date.help_text }}
+                </div>
+
+                <div class="form-group">
+                    {{ form.start_time.label_tag }}
+                    {{ form.start_time }}
+                    {{ form.start_time.help_text }}
+                </div>
+
+                <div class="form-group">
+                    {{ form.end_time.label_tag }}
+                    {{ form.end_time }}
+                    {{ form.end_time.help_text }}
+                </div>
+            </div>
+    
+            <hr>
+    
+            <div class="form-check form-check-inline">
+                {{ form.is_recurring }} <label for="{{ form.is_recurring.id_for_label }}" class="form-check-label"> {{ form.is_recurring.label }}</label>
+            </div>
+            <div id="recurrenceOptions" style="display: none;">
+                <div class="form-group">
+                    {{ form.recurrence_type.label_tag }} {{ form.recurrence_type }}
+                </div>
+                <div class="form-group">
+                    {{ form.recurrence_end_date.label_tag }} {{ form.recurrence_end_date }}
+                </div>
+            </div>
+        </div>
+        <button type="submit" class="btn btn-primary">
+            {% if is_edit %}
+                Save Changes
+            {% else %}
+                Create Event
+            {% endif %}
+        </button>
+    </form>
+    
+</div>
+
+<style>
+    /* Styling for form elements */
+    .styled-form textarea[name*="description"] {
+        height: 100px !important;  /* Smaller height for description field */
+        min-height: 100px;
+    }
+
+    /* General styling */
+    .styled-form input,
+    .styled-form select,
+    .styled-form textarea {
+        width: 100%;
+        padding: 8px;
+        margin-bottom: 10px;
+        border: 1px solid #ced4da;
+        border-radius: 4px;
+        box-sizing: border-box;
+    }
+
+    .styled-form label {
+        font-weight: 500;
+        margin-bottom: 5px;
+        display: block;
+    }
+
+    .styled-form p {
+        margin-bottom: 15px;
+    }
+    
+    .styled-form .helptext {
+        font-size: 0.85em;
+        color: #6c757d;
+        display: block;
+        margin-top: 2px;
+    }
+
+    /* Flexbox layout for date and time inputs */
+    .date-time-group {
+        display: flex;
+        gap: 10px;
+        justify-content: space-between;
+    }
+
+    .date-time-group .form-group {
+        flex: 1; /* Ensure each group takes an equal amount of space */
+        min-width: 0; /* Ensure the input fields don't overflow */
+    }
+
+    /* Style for form-check elements */
+    .form-check {
+        display: flex;
+        align-items: center;
+        margin-bottom: 15px;
+    }
+
+    /* Increasing checkbox size */
+    .styled-form input[type="checkbox"] {
+        width: 20px;
+        height: 20px;
+        margin-right: 10px;
+    }
+
+</style>
+
+<script>
+document.addEventListener('DOMContentLoaded', (event) => {
+    const isRecurringCheckbox = document.querySelector('input[name="is_recurring"]');
+    const recurrenceOptions = document.getElementById('recurrenceOptions');
+
+    isRecurringCheckbox.addEventListener('change', function() {
+        if (this.checked) {
+            recurrenceOptions.style.display = 'block';
+        } else {
+            recurrenceOptions.style.display = 'none';
+        }
+    });
+
+    // Initial check in case the form is pre-filled
+    if (isRecurringCheckbox.checked) {
+        recurrenceOptions.style.display = 'block';
+    }
+});
+</script>
+{% endblock %}

@@ -1,6 +1,7 @@
 from django.db import models
 from django.contrib.auth.models import User
 from datetime import date
+from django.utils import timezone
 
 class Event(models.Model):
     user = models.ForeignKey(User, on_delete=models.CASCADE)
@@ -19,6 +20,7 @@ class Event(models.Model):
         null=True
     )
     recurrence_end_date = models.DateField(blank=True, null=True)
+    reminder_minutes_before = models.IntegerField(default=15)
 
     def __str__(self):
         return self.title
@@ -43,9 +45,20 @@ class Connection(models.Model):
     
 class Notification(models.Model):
     user = models.ForeignKey(User, on_delete=models.CASCADE)
+    event = models.ForeignKey('Event', on_delete=models.CASCADE, null=True, blank=True)
     message = models.TextField()
     created_at = models.DateTimeField(auto_now_add=True)
     is_read = models.BooleanField(default=False)
+    snoozed_until = models.DateTimeField(null=True, blank=True)
 
     def __str__(self):
         return f"Notification for {self.user.username}: {self.message[:30]}"
+
+class Comment(models.Model):
+    event = models.ForeignKey(Event, on_delete=models.CASCADE, related_name='comments')
+    user = models.ForeignKey(User, on_delete=models.CASCADE)
+    content = models.TextField()
+    timestamp = models.DateTimeField(default=timezone.now)
+
+    def __str__(self):
+        return f"{self.user.username} on {self.event.title}: {self.content[:30]}"
