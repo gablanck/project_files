@@ -179,9 +179,13 @@
             data.notifications.forEach(n => {
               const li = document.createElement("li");
               li.classList.add("dropdown-item", "d-flex", "justify-content-between", "align-items-center");
+
+              const messageWrapper = document.createElement("div");
+              messageWrapper.classList.add("d-flex", "justify-content-between", "align-items-center", "w-100");
   
               const message = document.createElement("span");
               message.innerText = n.message;
+              message.classList.add("flex-grow-1");
   
               const markBtn = document.createElement("button");
               markBtn.className = "btn btn-sm btn-outline-secondary";
@@ -197,9 +201,20 @@
                   notifCount.innerText = notifList.children.length;
                 });
               };
+
+              const snoozeBtn = document.createElement("button");
+              snoozeBtn.className = "btn btn-sm btn-outline-info ms-2";
+              snoozeBtn.innerHTML = "😴";
+              snoozeBtn.onclick = () => {
+                snoozeNotification(n.id, 10);
+                li.remove(); // Optionally remove from list
+              };
+
+              messageWrapper.appendChild(message);
+              messageWrapper.appendChild(markBtn);
+              messageWrapper.appendChild(snoozeBtn);
   
-              li.appendChild(message);
-              li.appendChild(markBtn);
+              li.appendChild(messageWrapper);
               notifList.appendChild(li);
   
               if (!n.is_read) {
@@ -212,6 +227,21 @@
           }
         });
     }
+
+    function snoozeNotification(notificationId, minutes) {
+        fetch(`/schedules/snooze_notification/${notificationId}/?minutes=${minutes}`, {
+            method: 'POST',
+            headers: { 'X-CSRFToken': getCookie('csrftoken') },
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.status === 'snoozed') {
+                // Optionally remove the snoozed notification from the UI
+                document.getElementById(`notification-${notificationId}`)?.remove();
+            }
+        });
+    }
+
   
     document.addEventListener('DOMContentLoaded', function () {
       loadNotifications(); // Fetch on load

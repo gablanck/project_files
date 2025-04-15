@@ -53,6 +53,13 @@
             </div>
     
             <hr>
+
+            <div class="form-group">
+                {{ form.reminder_minutes_before.label_tag }} {{ form.reminder_minutes_before }}
+                <small class="form-text text-muted">Minutes before event to trigger a reminder</small>
+            </div>
+
+            <hr>
     
             <div class="form-check form-check-inline">
                 {{ form.is_recurring }} <label for="{{ form.is_recurring.id_for_label }}" class="form-check-label"> {{ form.is_recurring.label }}</label>

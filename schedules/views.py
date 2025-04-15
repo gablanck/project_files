@@ -1,6 +1,6 @@
 from django.shortcuts import render, get_object_or_404, redirect
 from django.contrib.auth.decorators import login_required
-from .models import Event, SharedSchedule, Connection, Comment
+from .models import Event, SharedSchedule, Connection, Comment, ConnectionRequest
 from .forms import EventForm
 from django.contrib.auth import login
 from .forms import RegisterForm
@@ -23,7 +23,6 @@ from django.utils import timezone
 from .forms import CommentForm
 
 
-
 @login_required
 def home(request):
     events = Event.objects.filter(user=request.user).order_by('date', 'start_time')
@@ -43,6 +42,7 @@ def create_or_edit_event(request, event_id=None):
         if form.is_valid():
             event = form.save(commit=False)
             event.user = request.user
+            event.is_shared = form.cleaned_data.get('is_shared', False)
             event.save()
 
             # ✅ Only create recurring events when adding a new one
@@ -153,10 +153,20 @@ def schedule_view(request):
     
 @login_required
 def get_calendar_events(request):
+    # Get user's own events
     events = list(Event.objects.filter(user=request.user))
-    connected_users = Connection.objects.filter(user=request.user).values_list('connected_to', flat=True)
+    print(f"User's own events: {len(events)}")
+    
+    # Get connected users with sharing enabled
+    connected_users = Connection.objects.filter(
+        user=request.user, 
+        share_schedule=True
+    ).values_list('connected_to', flat=True)
+    print(f"Connected users with sharing enabled: {list(connected_users)}")
+    
+    # Get all events from connected users (ignore is_shared flag)
     connected_events = Event.objects.filter(user__in=connected_users)
-
+    print(f"Connected events: {len(list(connected_events))}")
     calendar_events = []
     all_events = events + list(connected_events)
 
@@ -231,9 +241,23 @@ def user_search(request):
     # Get current connections for the logged-in user
     connected_users = Connection.objects.filter(user=request.user).values_list('connected_to_id', flat=True)
     
+    # Get sent connection requests
+    sent_requests = ConnectionRequest.objects.filter(
+        sender=request.user,
+        accepted=False
+    ).values_list('receiver_id', flat=True)
+    
+    # Get received connection requests
+    received_requests = ConnectionRequest.objects.filter(
+        receiver=request.user,
+        accepted=False
+    ).values_list('sender_id', flat=True)
+    
     # Add connection status to each user
     for user in users:
         user.is_connected = user.id in connected_users
+        user.request_sent = user.id in sent_requests
+        user.request_received = user.id in received_requests
 
     context = {
         'users': users,
@@ -245,22 +269,43 @@ def user_search(request):
 @login_required
 def connect_user(request, user_id):
     """
-    View for creating a connection with another user
+    View for sending a connection request to another user
     """
     if request.method == 'POST':
         try:
             user_to_connect = User.objects.get(id=user_id)
-            if user_to_connect != request.user:
-                connection, created = Connection.objects.get_or_create(
-                    user=request.user,
-                    connected_to=user_to_connect
-                )
-                if created:
-                    messages.success(request, f'Successfully connected with {user_to_connect.username}')
-                else:
-                    messages.info(request, f'Already connected with {user_to_connect.username}')
-            else:
+            if user_to_connect == request.user:
                 messages.error(request, "You can't connect with yourself")
+                return redirect('user_search')
+                
+            # Check if already connected
+            if Connection.objects.filter(user=request.user, connected_to=user_to_connect).exists():
+                messages.info(request, f'Already connected with {user_to_connect.username}')
+                return redirect('user_search')
+                
+            # Check if request already sent
+            request_exists = ConnectionRequest.objects.filter(
+                sender=request.user, 
+                receiver=user_to_connect,
+                accepted=False
+            ).exists()
+            
+            if request_exists:
+                messages.info(request, f'Connection request already sent to {user_to_connect.username}')
+            else:
+                # Create new connection request
+                ConnectionRequest.objects.create(
+                    sender=request.user,
+                    receiver=user_to_connect
+                )
+                
+                # Create notification for the receiver
+                Notification.objects.create(
+                    user=user_to_connect,
+                    message=f"{request.user.username} sent you a connection request"
+                )
+                
+                messages.success(request, f'Connection request sent to {user_to_connect.username}')
         except User.DoesNotExist:
             messages.error(request, "User not found")
     return redirect('user_search')
@@ -280,10 +325,127 @@ def disconnect_user(request, user_id):
 
 @login_required
 def my_connections(request):
+    # Get existing connections
     connections = Connection.objects.filter(user=request.user).select_related('connected_to')
+    
+    # Get pending connection requests received by the user
+    received_requests = ConnectionRequest.objects.filter(
+        receiver=request.user, 
+        accepted=False
+    ).select_related('sender')
+    
+    # Get sent connection requests that are still pending
+    sent_requests = ConnectionRequest.objects.filter(
+        sender=request.user,
+        accepted=False
+    ).select_related('receiver')
+    
     return render(request, 'connections/my_connections.html', {
-        'connections': connections
+        'connections': connections,
+        'received_requests': received_requests,
+        'sent_requests': sent_requests
     })
+
+@login_required
+def toggle_schedule_sharing(request, connection_id):
+    """
+    View to toggle schedule sharing with a connection.
+    Temporarily disabled; sharing is always enabled on accepting a connection.
+    """
+    messages.info(request, "The manual schedule sharing toggle is temporarily disabled. Schedules are shared by default with your connections.")
+    return redirect('my_connections')
+
+@login_required
+def process_connection_request(request, request_id, decision):
+    """
+    View for processing a connection request based on the decision.
+    Now, when a request is accepted, sharing is automatic.
+    """
+    if request.method == 'POST':
+        try:
+            conn_request = get_object_or_404(
+                ConnectionRequest, 
+                id=request_id, 
+                receiver=request.user,
+                accepted=False
+            )
+            
+            if decision == 'accept':
+                # Create bidirectional connection
+                # Enable share_schedule=True by default when connecting
+                Connection.objects.update_or_create(
+                    user=request.user,
+                    connected_to=conn_request.sender,
+                    defaults={'share_schedule': True}
+                )
+                Connection.objects.update_or_create(
+                    user=conn_request.sender,
+                    connected_to=request.user,
+                    defaults={'share_schedule': True}
+                )
+                
+                # Mark request as accepted
+                conn_request.accepted = True
+                conn_request.save()
+                
+                # Create notification for the sender
+                Notification.objects.create(
+                    user=conn_request.sender,
+                    message=f"{request.user.username} accepted your connection request"
+                )
+                
+                messages.success(request, f"Successfully connected and automatically shared schedules with {conn_request.sender.username}")
+            elif decision == 'reject':
+                # Delete the connection request
+                sender_name = conn_request.sender.username
+                conn_request.delete()
+                
+                messages.success(request, f"Connection request from {sender_name} rejected")
+            else:
+                messages.error(request, "Invalid decision")
+        except Exception as e:
+            messages.error(request, f"Error processing connection request: {str(e)}")
+    
+    return redirect('my_connections')
+
+# Keep these for backward compatibility
+@login_required
+def accept_connection(request, request_id):
+    """
+    View for accepting a connection request
+    """
+    return process_connection_request(request, request_id, 'accept')
+
+@login_required
+def reject_connection(request, request_id):
+    """
+    View for rejecting a connection request
+    """
+    return process_connection_request(request, request_id, 'reject')
+
+@login_required
+def cancel_request(request, request_id):
+    """
+    View for canceling a sent connection request
+    """
+    if request.method == 'POST':
+        try:
+            conn_request = get_object_or_404(
+                ConnectionRequest, 
+                id=request_id, 
+                sender=request.user,
+                accepted=False
+            )
+            
+            # Delete the connection request
+            receiver_name = conn_request.receiver.username
+            conn_request.delete()
+            
+            messages.success(request, f"Connection request to {receiver_name} canceled")
+        except Exception as e:
+            messages.error(request, f"Error canceling connection request: {str(e)}")
+    
+    return redirect('my_connections')
 
 @login_required
 def get_events_api(request):

@@ -28,5 +28,11 @@ urlpatterns = [
 
     path('event/<int:event_id>/', views.event_detail, name='event_detail'),
 
+    path('connection-request/<int:request_id>/accept/', views.accept_connection, name='accept_connection'),
+    path('connection-request/<int:request_id>/reject/', views.reject_connection, name='reject_connection'),
+    path('connection-request/<int:request_id>/cancel/', views.cancel_request, name='cancel_request'),
+    path('connection-request/<int:request_id>/<str:decision>/', views.process_connection_request, name='process_connection_request'),
+
+    path('connections/<int:connection_id>/toggle-sharing/', views.toggle_schedule_sharing, name='toggle_schedule_sharing'),
 ]
 

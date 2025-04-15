@@ -32,10 +32,23 @@ class SharedSchedule(models.Model):
     def __str__(self):
         return f"{self.event.title} shared with {self.shared_with.username}"
 
+class ConnectionRequest(models.Model):
+    sender = models.ForeignKey(User, on_delete=models.CASCADE, related_name='sent_requests')
+    receiver = models.ForeignKey(User, on_delete=models.CASCADE, related_name='received_requests')
+    created_at = models.DateTimeField(auto_now_add=True)
+    accepted = models.BooleanField(default=False)
+
+    class Meta:
+        unique_together = ('sender', 'receiver')
+
+    def __str__(self):
+        return f"Request from {self.sender.username} to {self.receiver.username}"
+
 class Connection(models.Model):
     user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='connections')
     connected_to = models.ForeignKey(User, on_delete=models.CASCADE, related_name='connected_by')
     created_at = models.DateTimeField(auto_now_add=True)
+    share_schedule = models.BooleanField(default=False)  # Field to track schedule sharing
 
     class Meta:
         unique_together = ['user', 'connected_to']

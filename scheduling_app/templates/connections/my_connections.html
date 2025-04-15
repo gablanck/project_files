@@ -3,7 +3,37 @@
 {% block content %}
 <div class="container mt-4">
     <h2>My Connections</h2>
-    
+
+    <hr>
+    <h3>Pending Connection Requests</h3>
+    <div class="row">
+        {% for request in received_requests %}
+        <div class="col-md-4 mb-3">
+            <div class="card">
+                <div class="card-body">
+                    <h5 class="card-title">{{ request.sender.username }}</h5>
+                    <p class="card-text">{{ request.sender.email }}</p>
+                    <p class="card-text"><small class="text-muted">Requested on: {{ request.created_at|date }}</small></p>
+                    <form method="POST" action="{% url 'process_connection_request' request.id 'accept' %}" style="display:inline;">
+                        {% csrf_token %}
+                        <button type="submit" class="btn btn-success">Accept</button>
+                    </form>
+                    <form method="POST" action="{% url 'process_connection_request' request.id 'reject' %}" style="display:inline;">
+                        {% csrf_token %}
+                        <button type="submit" class="btn btn-danger">Reject</button>
+                    </form>
+                </div>
+            </div>
+        </div>
+        {% empty %}
+        <div class="col-12">
+            <p>You have no pending connection requests.</p>
+        </div>
+        {% endfor %}
+    </div>
+
+    <hr>
+    <h3>Current Connections</h3>
     <div class="row">
         {% for connection in connections %}
         <div class="col-md-4 mb-3">
@@ -12,10 +42,20 @@
                     <h5 class="card-title">{{ connection.connected_to.username }}</h5>
                     <p class="card-text">{{ connection.connected_to.email }}</p>
                     <p class="card-text"><small class="text-muted">Connected since: {{ connection.created_at|date }}</small></p>
-                    <form method="POST" action="{% url 'disconnect_user' connection.connected_to.id %}">
-                        {% csrf_token %}
-                        <button type="submit" class="btn btn-danger">Disconnect</button>
-                    </form>
+                    <div class="d-flex justify-content-between align-items-center">
+                        <form method="POST" action="{% url 'disconnect_user' connection.connected_to.id %}">
+                            {% csrf_token %}
+                            <button type="submit" class="btn btn-danger">Disconnect</button>
+                        </form>
+                        <form method="POST" action="{% url 'toggle_schedule_sharing' connection.id %}" style="display:inline;">
+                            {% csrf_token %}
+                            <div class="form-check form-switch">
+                                <input class="form-check-input" type="checkbox" name="share_schedule" 
+                                       {% if connection.share_schedule %}checked{% endif %} onchange="this.form.submit()">
+                                <label class="form-check-label">Share Schedule</label>
+                            </div>
+                        </form>
+                    </div>
                 </div>
             </div>
         </div>

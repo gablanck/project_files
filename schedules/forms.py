@@ -34,7 +34,7 @@ class EventForm(forms.ModelForm):
     
     class Meta:
         model = Event
-        fields = ['title', 'description', 'date', 'start_time', 'end_time', 'is_recurring', 'recurrence_type', 'recurrence_end_date']
+        fields = ['title', 'description', 'date', 'start_time', 'end_time', 'is_recurring', 'recurrence_type', 'recurrence_end_date', 'reminder_minutes_before']
     
     def clean(self):
         cleaned_data = super().clean()
