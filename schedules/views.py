@@ -348,12 +348,14 @@ def my_connections(request):
 
 @login_required
 def toggle_schedule_sharing(request, connection_id):
-    """
-    View to toggle schedule sharing with a connection.
-    Temporarily disabled; sharing is always enabled on accepting a connection.
-    """
-    messages.info(request, "The manual schedule sharing toggle is temporarily disabled. Schedules are shared by default with your connections.")
+    if request.method == 'POST':
+        connection = get_object_or_404(Connection, id=connection_id, user=request.user)
+        connection.share_schedule = not connection.share_schedule  # toggle the flag
+        connection.save()
+        #next line displayed the messages when display is changed 
+        # messages.success(request, f"Schedule sharing {'enabled' if connection.share_schedule else 'disabled'} for {connection.connected_to.username}")
     return redirect('my_connections')
+
 
 @login_required
 def process_connection_request(request, request_id, decision):
@@ -366,7 +368,7 @@ def process_connection_request(request, request_id, decision):
             conn_request = get_object_or_404(
                 ConnectionRequest, 
                 id=request_id, 
-                receiver=request.user,
+                receiver=request.user, 
                 accepted=False
             )
             
@@ -547,14 +549,18 @@ def update_event(request, event_id):
 
 @login_required
 def get_notifications(request):
-    notifications = Notification.objects.filter(user=request.user, is_read=False).exclude(snoozed_until__gt=timezone.now()).order_by('-created_at')[:10]
-    
+    now_time = timezone.now()
+    notifications = Notification.objects.filter(user=request.user, is_read=False).order_by('-created_at')[:10]
+
     data = [
         {
             'id': n.id,
-            'message': n.message,
+            'message': n.message if not (n.snoozed_until and n.snoozed_until > now_time) else (
+                n.message if n.message.startswith("[Snoozed]") else f"[Snoozed] {n.message}"
+            ),
             'created_at': n.created_at.strftime('%Y-%m-%d %H:%M'),
-            'is_read': n.is_read
+            'is_read': n.is_read,
+            'snoozed': bool(n.snoozed_until and n.snoozed_until > now_time)
         }
         for n in notifications
     ]

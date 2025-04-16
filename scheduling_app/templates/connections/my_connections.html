@@ -2,14 +2,13 @@
 
 {% block content %}
 <div class="container mt-4">
-    <h2>My Connections</h2>
 
-    <hr>
-    <h3>Pending Connection Requests</h3>
+    <!-- Pending Requests -->
+    <h3>Pending Requests</h3>
     <div class="row">
         {% for request in received_requests %}
         <div class="col-md-4 mb-3">
-            <div class="card">
+            <div class=" card">
                 <div class="card-body">
                     <h5 class="card-title">{{ request.sender.username }}</h5>
                     <p class="card-text">{{ request.sender.email }}</p>
@@ -32,12 +31,15 @@
         {% endfor %}
     </div>
 
+    <!-- Divider and Two Column Layout -->
     <hr>
-    <h3>Current Connections</h3>
     <div class="row">
-        {% for connection in connections %}
-        <div class="col-md-4 mb-3">
-            <div class="card">
+        <!-- Left: Current Connections -->
+        <div class="col-md-6 border-end">
+            <h3>Current Connections</h3>
+            
+            {% for connection in connections %}
+            <div class="card-connection card mb-3">
                 <div class="card-body">
                     <h5 class="card-title">{{ connection.connected_to.username }}</h5>
                     <p class="card-text">{{ connection.connected_to.email }}</p>
@@ -52,19 +54,28 @@
                             <div class="form-check form-switch">
                                 <input class="form-check-input" type="checkbox" name="share_schedule" 
                                        {% if connection.share_schedule %}checked{% endif %} onchange="this.form.submit()">
-                                <label class="form-check-label">Share Schedule</label>
+                                <label class="form-check-label">Share</label>
                             </div>
                         </form>
                     </div>
                 </div>
             </div>
-        </div>
-        {% empty %}
-        <div class="col-12">
+            {% empty %}
             <p>You haven't connected with any users yet.</p>
             <a href="{% url 'user_search' %}" class="btn btn-primary">Find Users</a>
+            {% endfor %}
         </div>
-        {% endfor %}
+
+        <!-- Right: Group Connections -->
+        <div class="col-md-6">
+            <h3>Group Connections</h3>
+            <p class="text-muted">Group feature coming soon...</p>
+            <!-- Placeholder content for now -->
+            <div class="alert alert-info">
+                This section will show your group connections once the feature is implemented.
+            </div>
+        </div>
     </div>
+
 </div>
 {% endblock %}

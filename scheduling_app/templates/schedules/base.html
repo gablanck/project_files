@@ -34,10 +34,30 @@
     }
 
     .card {
-      border: none;
-      box-shadow: 0 6px 20px rgba(0, 0, 0, 0.08);
       border-radius: 15px;
+      box-shadow: 0 6px 20px rgba(0, 0, 0, 0.08);
+  
     }
+  .card-body {
+    border-radius: 15px;
+  }
+.list-group {
+  margin-bottom: 20px;
+  border-radius: 15px;
+}
+.list-group-item:not(:last-child) {
+  margin-bottom: 20px; /
+}
+    .card-connection {
+      display: flex;
+    flex-direction: row;
+
+    }
+     .connection-request {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    } 
 
     footer {
       background-color: #ffffffcc;
@@ -49,6 +69,7 @@
       width: 100%;
       font-size: 0.9em;
       color: #444;
+      z-index: 69;
     }
 
     .btn-primary {
@@ -58,6 +79,10 @@
     .btn-primary:hover {
         background-color: #00acc1;
         border-color: #00acc1;
+    }
+
+    .btn-outline-secondary {
+      border-color: #00c140;
     }
 
     .btn-danger {
@@ -171,12 +196,13 @@
         .then(data => {
           const notifList = document.getElementById("notifList");
           const notifCount = document.getElementById("notifCount");
+          const visibleNotifications = data.notifications.filter(n => !n.snoozed);
           notifList.innerHTML = "";
   
           if (data.notifications.length > 0) {
             notifCount.innerText = data.notifications.length;
   
-            data.notifications.forEach(n => {
+            visibleNotifications.forEach(n => {
               const li = document.createElement("li");
               li.classList.add("dropdown-item", "d-flex", "justify-content-between", "align-items-center");
 
@@ -184,12 +210,17 @@
               messageWrapper.classList.add("d-flex", "justify-content-between", "align-items-center", "w-100");
   
               const message = document.createElement("span");
-              message.innerText = n.message;
+
+              if (n.snoozed) {
+                message.innerText = `${n.message}`;
+              } else {
+                message.innerText = n.message;
+              }
               message.classList.add("flex-grow-1");
   
               const markBtn = document.createElement("button");
               markBtn.className = "btn btn-sm btn-outline-secondary";
-              markBtn.innerText = "✓";
+              markBtn.innerText = "✅";
               markBtn.onclick = () => {
                 fetch(`/schedules/notifications/mark_read/${n.id}/`, {
                   method: "POST",
@@ -206,11 +237,12 @@
               snoozeBtn.className = "btn btn-sm btn-outline-info ms-2";
               snoozeBtn.innerHTML = "😴";
               snoozeBtn.onclick = () => {
-                snoozeNotification(n.id, 10);
+                snoozeNotification(n.id, 5);
                 li.remove(); // Optionally remove from list
               };
 
               messageWrapper.appendChild(message);
+              markBtn.className = "btn btn-sm btn-outline-secondary ms-2";
               messageWrapper.appendChild(markBtn);
               messageWrapper.appendChild(snoozeBtn);
   

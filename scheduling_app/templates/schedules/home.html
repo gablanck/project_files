@@ -8,7 +8,7 @@
     <h2 class="mb-4">Your Events</h2>
     <ul class="list-group">
         {% for event in events %}
-            <li class="list-group-item">
+            <li class="list-group-item card-body">
                 <div class="event">
                     <h3>{{ event.title }}</h3>
                     <p>{{ event.date }} from {{ event.start_time }} to {{ event.end_time }}</p>

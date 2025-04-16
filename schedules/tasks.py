@@ -41,14 +41,22 @@ def generate_event_notifications(*args, **kwargs):
 
     for event in events:
         event_start = make_aware(datetime.combine(event.date, event.start_time))
-
         reminder_time = event_start - timedelta(minutes=event.reminder_minutes_before)
-        
+
         print(f"[DEBUG] Checking event: {event.title} @ {event_start}")
 
-        if local_now >= reminder_time and local_now <= event_start:
-            print(f"[DEBUG] --> MATCHED: creating notification for {event.title}")
-            if not Notification.objects.filter(user=event.user, event=event).exists():
+        if reminder_time <= local_now <= event_start:
+            existing = Notification.objects.filter(user=event.user, event=event).first()
+
+            if existing:
+                print(f"[DEBUG] --> Found existing notification for {event.title}")
+                if existing.snoozed_until and existing.snoozed_until > local_now:
+                    print(f"[DEBUG] --> SKIPPED: Snoozed until {existing.snoozed_until}")
+                    continue
+                else:
+                    print(f"[DEBUG] --> ALREADY EXISTS: Not snoozed, keeping existing")
+            else:
+                print(f"[DEBUG] --> MATCHED: creating notification for {event.title}")
                 Notification.objects.create(
                     user=event.user,
                     event=event,
@@ -57,3 +65,5 @@ def generate_event_notifications(*args, **kwargs):
                 )
         else:
             print(f"[DEBUG] --> SKIPPED: not within 15-minute window")
+
+            
