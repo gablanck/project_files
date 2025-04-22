@@ -1,33 +1,182 @@
 
 {% extends "schedules/base.html" %}
 
-{% block title %}Your Events{% endblock %}
+{% block title %}Your Events & Groups{% endblock %}
 
 {% block content %}
+<!-- Pending Group Invitations (if you want to add it) -->
+{% if pending_group_invitations %}
+  <div class="alert alert-info">
+    <h5>Pending Group Invitations</h5>
+    <ul>
+      {% for invite in pending_group_invitations %}
+        <li>
+          Group: <strong>{{ invite.group.name }}</strong> -
+          Invited by: {{ invite.invited_by.username }}
+          <form method="post" action="{% url 'group_accept_invite' invite.id %}" style="display:inline;">
+            {% csrf_token %}
+            <button class="btn btn-success btn-sm" type="submit">Accept</button>
+          </form>
+          <form method="post" action="{% url 'group_decline_invite' invite.id %}" style="display:inline;">
+            {% csrf_token %}
+            <button class="btn btn-warning btn-sm" type="submit">Decline</button>
+          </form>
+        </li>
+      {% endfor %}
+    </ul>
+  </div>
+{% endif %}
+<!-- Two-column layout container -->
 <div class="container">
-    <h2 class="mb-4">Your Events</h2>
-    <ul class="list-group">
+  <div class="row">
+    <!-- LEFT COLUMN - EVENTS SECTION -->
+    <div class="col-md-6 pe-md-3">
+      <div class="d-flex justify-content-between align-items-center mb-3">
+        <h2 class="mb-0">Your Events</h2>
+        <!-- Create Event button moved here to match the Groups section -->
+        <a href="{% url 'event_create' %}" class="btn btn-success btn-sm">+ Create New Event</a>
+      </div>
+      <ul class="list-group">
         {% for event in events %}
-            <li class="list-group-item card-body">
-                <div class="event">
-                    <h3>{{ event.title }}</h3>
-                    <p>{{ event.date }} from {{ event.start_time }} to {{ event.end_time }}</p>
-                    <p>{{ event.description }}</p>
-                    {% if event.is_shared %}<p><strong>Shared</strong></p>{% endif %}
-                    
-                    <!-- Recurrence Indicator -->
-                    {% if event.is_recurring %}
-                        <p><strong>Recurring:</strong> Every {{ event.recurrence_type }} until {{ event.recurrence_end_date }}</p>
-                    {% endif %}
+          <li class="list-group-item card-body">
+            <div class="event">
+              <h3>{{ event.title }}</h3>
+              <p>{{ event.date }} from {{ event.start_time }} to {{ event.end_time }}</p>
+              <p>{{ event.description }}</p>
+              {% if event.is_shared %}<p><strong>Shared</strong></p>{% endif %}
+              
+              <!-- Recurrence Indicator -->
+              {% if event.is_recurring %}
+                <p><strong>Recurring:</strong> Every {{ event.recurrence_type }} until {{ event.recurrence_end_date }}</p>
+              {% endif %}
+            </div>
+            <a href="{% url 'event_edit' event.id %}" class="btn btn-warning btn-sm">Edit</a>
+            <a href="{% url 'event_delete' event_id=event.pk %}" class="btn btn-danger btn-sm" onclick="return confirm('Are you sure you want to delete this event?')">Delete</a>
+          </li>
+        {% empty %}
+          <p>No events found.</p>
+        {% endfor %}
+      </ul>
+    </div>
+    
+    <!-- CENTER DIVIDER -->
+    <div class="d-none d-md-block col-md-auto">
+      <div class="vr h-100 mx-3"></div>
+    </div>
+    
+    <!-- RIGHT COLUMN - GROUPS SECTION -->
+    <div class="col-md-5 ps-md-2 mt-5 mt-md-0">
+      <div class="d-flex justify-content-between align-items-center mb-3">
+        <h2>Your Groups</h2>
+        <!-- Button trigger modal for creating a group -->
+        <button class="btn btn-primary btn-sm" data-bs-toggle="modal" data-bs-target="#createGroupModal">+ Create Group</button>
+      </div>
+    <ul class="list-group">
+        {% for group in groups %}
+            <li class="list-group-item card">
+                <div class="card-body">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <div>
+                            <h4>{{ group.name }}</h4>
+                            <p>{{ group.description }}</p>
+                            
+                            <!-- Members List - Show usernames instead of count -->
+                            <div class="mb-2">
+                                <h6 class="mb-1">Members:</h6>
+                                <div class="d-flex flex-wrap">
+                                    {% for membership in group.memberships.all %}
+                                        <span class="badge bg-secondary me-1 mb-1">
+                                            {{ membership.user.username }}
+                                            {% if membership.is_admin %}
+                                                <small>(Admin)</small>
+                                            {% endif %}
+                                        </span>
+                                    {% endfor %}
+                                </div>
+                            </div>
+                            
+                            {% if group.creator.username == user.username %}
+                                <span class="badge bg-success">You're the creator</span>
+                            {% endif %}
+                            
+                            <!-- Leave Group Button -->
+                            <form method="post" action="{% url 'leave_group' group.id %}" style="display:right;" 
+                                  onsubmit="return confirm('Are you sure you want to leave this group?')">
+                                {% csrf_token %}
+                                <button type="submit" class="btn btn-outline-danger btn-sm mt-2">Leave Group</button>
+                            </form>
+                        </div>
+                        <!-- Invite to group form (dropdown or inline) -->
+                        <form class="d-inline" method="post" action="{% url 'group_invite' group.id %}">
+                            {% csrf_token %}
+                            <div class="input-group">
+                                <select class="form-select" name="user_id" required>
+                                    <option value="" disabled selected>Invite user...</option>
+                                    {% for user_choice in group.invitable_users %}
+                                        <option value="{{ user_choice.id }}">{{ user_choice.username }}</option>
+                                    {% endfor %}
+                                </select>
+                                <button type="submit" class="btn btn-outline-primary btn-sm">Invite</button>
+                            </div>
+                        </form>
+                    </div>
+                    <!-- GROUP EVENTS SECTION -->
+                    <div class="mt-3">
+                        <h6>Group Events:</h6>
+                        <ul class="list-group pt-2">
+                            {% for event in group.events %}
+                                <li class="list-group-item">
+                                    <div>
+                                        <strong>{{ event.title }}</strong>: {{ event.date }} from {{ event.start_time }} to {{ event.end_time }}
+                                        <small class="text-muted ms-2">by {{ event.user.username }}</small>
+                                    </div>
+                                    <a href="{% url 'event_edit' event.id %}" class="btn btn-warning btn-sm">Edit</a>
+                                    {% if event.user == user %}
+                                        <a href="{% url 'event_delete' event_id=event.pk %}" class="btn btn-danger btn-sm" onclick="return confirm('Delete this group event?')">Delete</a>
+                                    {% endif %}
+                                </li>
+                            {% empty %}
+                                <li class="list-group-item text-muted">No group events.</li>
+                            {% endfor %}
+                        </ul>
+                        <!-- Button to add a new group event (same as regular events but passes group id) -->
+                        <a href="{% url 'event_create' %}?group={{ group.id }}" class="btn btn-success btn-sm mt-2">Add Event to Group</a>
+                    </div>
                 </div>
-                <a href="{% url 'event_edit' event.id %}" class="btn btn-warning btn-sm">Edit</a>
-                <a href="{% url 'event_delete' event_id=event.pk %}" class="btn btn-danger btn-sm" onclick="return confirm('Are you sure you want to delete this event?')">Delete</a>
-                <!-- <a href="{% url 'share_event' event_id=event.pk %}" class="btn btn-info btn-sm">Share</a> -->
             </li>
         {% empty %}
-            <p>No events found.</p>
+            <li class="list-group-item text-muted">You are not in any groups.</li>
         {% endfor %}
     </ul>
-    <a href="{% url 'event_create' %}" class="btn btn-success mt-3">Create New Event</a>
+    </div>
+  </div>
+</div>
+
+<!-- Modal Dialog: CREATE GROUP -->
+<div class="modal fade" id="createGroupModal" tabindex="-1" aria-labelledby="createGroupModalLabel" aria-hidden="true">
+  <div class="modal-dialog">
+    <form method="post" action="{% url 'group_create' %}">
+      {% csrf_token %}
+      <div class="modal-content">
+        <div class="modal-header">
+          <h5 class="modal-title" id="createGroupModalLabel">Create New Group</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+        </div>
+        <div class="modal-body">
+          <div class="mb-3">
+            <label for="group-name" class="form-label">Group Name</label>
+            <input type="text" class="form-control" id="group-name" name="name" required maxlength="100">
+          </div>
+          <div class="mb-3">
+            <label for="group-desc" class="form-label">Description</label>
+            <textarea class="form-control" id="group-desc" name="description" rows="2"></textarea>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="submit" class="btn btn-primary">Create Group</button>
+        </div>
+      </div>
+    </form>
+  </div>
 </div>
 {% endblock %}

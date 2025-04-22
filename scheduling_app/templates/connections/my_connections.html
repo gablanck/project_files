@@ -69,11 +69,75 @@
         <!-- Right: Group Connections -->
         <div class="col-md-6">
             <h3>Group Connections</h3>
-            <p class="text-muted">Group feature coming soon...</p>
-            <!-- Placeholder content for now -->
+            
+            <!-- Pending Group Invitations -->
+            {% if pending_group_invitations %}
             <div class="alert alert-info">
-                This section will show your group connections once the feature is implemented.
+                <h5>Pending Group Invitations</h5>
+                <ul class="list-unstyled">
+                    {% for invite in pending_group_invitations %}
+                    <li class="mb-2">
+                        <div class="card">
+                            <div class="card-body">
+                                <p class="mb-1"><strong>{{ invite.group.name }}</strong></p>
+                                <p class="mb-2 small text-muted">Invited by: {{ invite.invited_by.username }}</p>
+                                <div class="d-flex">
+                                    <form method="post" action="{% url 'group_accept_invite' invite.id %}" class="me-2">
+                                        {% csrf_token %}
+                                        <button class="btn btn-success btn-sm" type="submit">Accept</button>
+                                    </form>
+                                    <form method="post" action="{% url 'group_decline_invite' invite.id %}">
+                                        {% csrf_token %}
+                                        <button class="btn btn-warning btn-sm" type="submit">Decline</button>
+                                    </form>
+                                </div>
+                            </div>
+                        </div>
+                    </li>
+                    {% endfor %}
+                </ul>
             </div>
+            {% endif %}
+            
+            <!-- Current Groups -->
+         
+            {% if groups %}
+                <div class="list-group">
+                    {% for group in groups %}
+                    <a href="{% url 'group_detail' group.id %}" class="list-group-item list-group-item-action">
+                        <div class="d-flex justify-content-between align-items-center">
+                            <h6 class="mb-1">{{ group.name }}</h6>
+                            {% if group.creator.id == user.id %}
+                                <span class="badge bg-success">Admin</span>
+                            {% endif %}
+                        </div>
+                        
+                        <p class="mb-1 small">{{ group.description|truncatechars:100 }}</p>
+                        <div class="mb-2">
+                            <h6 class="mb-1">Members:</h6>
+                            <div class="d-flex flex-wrap">
+                                {% for membership in group.memberships.all %}
+                                    <span class="badge bg-secondary me-1 mb-1">
+                                        {{ membership.user.username }}
+                                        {% if membership.is_admin %}
+                                            <small>(Admin)</small>
+                                        {% endif %}
+                                    </span>
+                                {% endfor %}
+                            </div>
+                        </div>
+                        <form method="post" action="{% url 'leave_group' group.id %}" style="display:right;" 
+                                  onsubmit="return confirm('Are you sure you want to leave this group?')">
+                                {% csrf_token %}
+                                <button type="submit" class="btn btn-outline-danger btn-sm mt-2">Leave Group</button>
+                            </form>
+                    </a>
+                    {% endfor %}
+                </div>
+            {% else %}
+                <p>You are not a member of any groups yet.</p>
+                <a href="{% url 'group_create' %}" class="btn btn-primary btn-sm">Create a Group</a>
+            {% endif %}
         </div>
     </div>
 

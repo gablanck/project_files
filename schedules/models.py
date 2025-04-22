@@ -3,8 +3,43 @@ from django.contrib.auth.models import User
 from datetime import date
 from django.utils import timezone
 
+class Group(models.Model):
+    name = models.CharField(max_length=100)
+    description = models.TextField(blank=True)
+    creator = models.ForeignKey(User, on_delete=models.CASCADE, related_name='created_groups')
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return self.name
+
+class GroupMembership(models.Model):
+    group = models.ForeignKey(Group, on_delete=models.CASCADE, related_name='memberships')
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='group_memberships')
+    is_admin = models.BooleanField(default=False)
+    joined_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        unique_together = ('group', 'user')
+
+    def __str__(self):
+        return f"{self.user.username} in {self.group.name}"
+
+class GroupInvitation(models.Model):
+    group = models.ForeignKey(Group, on_delete=models.CASCADE, related_name='invitations')
+    invited_user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='group_invitations')
+    invited_by = models.ForeignKey(User, on_delete=models.CASCADE, related_name='sent_group_invitations')
+    status = models.CharField(max_length=12, choices=[('pending', 'Pending'), ('accepted', 'Accepted'), ('declined', 'Declined')], default='pending')
+    invited_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        unique_together = ('group', 'invited_user')
+
+    def __str__(self):
+        return f"{self.invited_user.username} invited to {self.group.name} by {self.invited_by.username}"
+
 class Event(models.Model):
     user = models.ForeignKey(User, on_delete=models.CASCADE)
+    group = models.ForeignKey(Group, on_delete=models.SET_NULL, null=True, blank=True, related_name='group_events')
     title = models.CharField(max_length=200)
     description = models.TextField()
     date = models.DateField()  # Keep the DateField for the event date

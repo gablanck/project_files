@@ -1,6 +1,9 @@
 from django.shortcuts import render, get_object_or_404, redirect
 from django.contrib.auth.decorators import login_required
-from .models import Event, SharedSchedule, Connection, Comment, ConnectionRequest
+from .models import (
+    Event, SharedSchedule, Connection, Comment, ConnectionRequest,
+    Group, GroupMembership, GroupInvitation
+)
 from .forms import EventForm
 from django.contrib.auth import login
 from .forms import RegisterForm
@@ -25,23 +28,98 @@ from .forms import CommentForm
 
 @login_required
 def home(request):
-    events = Event.objects.filter(user=request.user).order_by('date', 'start_time')
-    return render(request, 'schedules/home.html', {'events': events})
+    # Separate personal events (not in any group)
+    events = Event.objects.filter(user=request.user, group__isnull=True).order_by('date', 'start_time')
+
+    # Find all group memberships for user
+    memberships = GroupMembership.objects.filter(user=request.user).select_related('group')
+    groups = [mem.group for mem in memberships]
+
+    # All users except self for inviting to groups
+    all_other_users = User.objects.exclude(id=request.user.id)
+    
+    # Build group context for each group
+    group_contexts = []
+    for group in groups:
+        # Find all current members
+        member_ids = set(group.memberships.values_list('user_id', flat=True))
+        # Find all in-flight invitations (status pending)
+        already_invited = set(
+            GroupInvitation.objects.filter(group=group, status='pending')
+            .values_list('invited_user_id', flat=True)
+        )
+        invitable_users = all_other_users.exclude(id__in=member_ids | already_invited)
+        
+        # Only show events for THIS group!
+        group_events = Event.objects.filter(group=group).order_by('date', 'start_time')
+
+        group_contexts.append({
+            "id": group.id,
+            "name": group.name,
+            "description": group.description,
+            "creator": group.creator,
+            "memberships": group.memberships.select_related('user').all(),
+            "events": group_events,
+            "invitable_users": invitable_users,
+        })
+
+    # All pending invites to this user (to display in template)
+    pending_group_invitations = GroupInvitation.objects.filter(
+        invited_user=request.user, 
+        status="pending"
+    ).select_related('group', 'invited_by')
+
+    return render(request, 'schedules/home.html', {
+        "events": events,
+        "groups": group_contexts,
+        "pending_group_invitations": pending_group_invitations,
+    })
 
 
 def create_or_edit_event(request, event_id=None):
+    # For new events, check if there's a group parameter
+    group = None
+    group_id = request.GET.get('group')
+    
     if event_id:
         event = get_object_or_404(Event, id=event_id)
         is_edit = True
+        
+        # For existing events, get the group from the event
+        if event.group:
+            group = event.group
+            
+        # Check permissions - user must be owner of the event
+        if event.user != request.user:
+            messages.error(request, "You can only edit your own events.")
+            return redirect('home')
     else:
         event = Event(user=request.user)
         is_edit = False
+        
+        # For new events with a group parameter
+        if group_id:
+            try:
+                group = Group.objects.get(id=group_id)
+                # Verify user is a member of the group
+                if not GroupMembership.objects.filter(group=group, user=request.user).exists():
+                    messages.error(request, "You must be a member of the group to create events.")
+                    return redirect('home')
+                event.group = group
+            except Group.DoesNotExist:
+                messages.error(request, "Group not found.")
+                return redirect('home')
 
     if request.method == 'POST':
         form = EventForm(request.POST, instance=event)
         if form.is_valid():
             event = form.save(commit=False)
             event.user = request.user
+            
+            # Make sure group is preserved
+            if group:
+                event.group = group
+                
             event.is_shared = form.cleaned_data.get('is_shared', False)
             event.save()
 
@@ -62,6 +140,7 @@ def create_or_edit_event(request, event_id=None):
                     # Create copies of the recurring event
                     Event.objects.create(
                         user=event.user,
+                        group=event.group,  # Include group in recurring events
                         title=event.title,
                         description=event.description,
                         date=current_date,
@@ -78,7 +157,8 @@ def create_or_edit_event(request, event_id=None):
     context = {
         'form': form,
         'is_edit': is_edit,
-        'event': event
+        'event': event,
+        'group': group
     }
     return render(request, 'schedules/event_form.html', context)
 
@@ -340,10 +420,22 @@ def my_connections(request):
         accepted=False
     ).select_related('receiver')
     
+    # Get groups the user is a member of
+    group_memberships = GroupMembership.objects.filter(user=request.user).select_related('group', 'group__creator')
+    groups = [membership.group for membership in group_memberships]
+    
+    # Get pending group invitations for this user
+    pending_group_invitations = GroupInvitation.objects.filter(
+        invited_user=request.user, 
+        status="pending"
+    ).select_related('group', 'invited_by')
+    
     return render(request, 'connections/my_connections.html', {
         'connections': connections,
         'received_requests': received_requests,
-        'sent_requests': sent_requests
+        'sent_requests': sent_requests,
+        'groups': groups,  # Added groups
+        'pending_group_invitations': pending_group_invitations,  # Added pending invitations
     })
 
 @login_required
@@ -617,3 +709,143 @@ def event_detail(request, event_id):
         'comments': comments,
         'form': form
     })
+
+@login_required
+def group_create(request):
+    if request.method == "POST":
+        name = request.POST.get("name")
+        desc = request.POST.get("description")
+        if not name:
+            messages.error(request, "Group must have a name.")
+            return redirect('home')
+        
+        # Create group
+        group = Group.objects.create(
+            name=name,
+            description=desc or "",
+            creator=request.user
+        )
+        # Add creator as admin/member
+        GroupMembership.objects.create(
+            group=group,
+            user=request.user,
+            is_admin=True
+        )
+        messages.success(request, f"Group '{name}' created.")
+        return redirect('home')
+    return redirect('home')
+
+@login_required
+def group_invite(request, group_id):
+    # Only admins can invite
+    group = get_object_or_404(Group, id=group_id)
+    membership = GroupMembership.objects.filter(group=group, user=request.user, is_admin=True).first()
+    if not membership:
+        messages.error(request, "Only group admins can invite users.")
+        return redirect('home')
+        
+    if request.method == 'POST':
+        user_id = request.POST.get('user_id')
+        invitee = get_object_or_404(User, id=user_id)
+        
+        # Prevent inviting current members
+        if GroupMembership.objects.filter(group=group, user=invitee).exists():
+            messages.info(request, f"{invitee.username} is already in the group.")
+            return redirect('home')
+            
+        # Check for existing invitation of any status
+        existing_invitation = GroupInvitation.objects.filter(
+            group=group, 
+            invited_user=invitee
+        ).first()
+        
+        if existing_invitation:
+            # If it was previously accepted/declined, change status back to pending
+            if existing_invitation.status in ['accepted', 'declined']:
+                existing_invitation.status = 'pending'
+                existing_invitation.invited_by = request.user
+                existing_invitation.invited_at = timezone.now()
+                existing_invitation.save()
+                messages.success(request, f"Invitation sent to {invitee.username}.")
+            else:
+                # It's already pending
+                messages.info(request, f"{invitee.username} has already been invited to this group.")
+        else:
+            # Create new invitation if none exists
+            GroupInvitation.objects.create(
+                group=group, 
+                invited_user=invitee, 
+                invited_by=request.user
+            )
+            messages.success(request, f"Invitation sent to {invitee.username}.")
+            
+            # Create notification for the invitee
+            Notification.objects.create(
+                user=invitee,
+                message=f"{request.user.username} invited you to join the group '{group.name}'."
+            )
+            
+    return redirect('home')
+
+@login_required
+def group_accept_invite(request, invitation_id):
+    invitation = get_object_or_404(GroupInvitation, id=invitation_id, invited_user=request.user)
+    if invitation.status == "pending":
+        # Accepting invitation
+        GroupMembership.objects.create(group=invitation.group, user=request.user)
+        invitation.status = "accepted"
+        invitation.save()
+        messages.success(request, f"You joined group '{invitation.group.name}'.")
+    return redirect('home')
+
+@login_required
+def group_decline_invite(request, invitation_id):
+    invitation = get_object_or_404(GroupInvitation, id=invitation_id, invited_user=request.user)
+    if invitation.status == "pending":
+        invitation.status = "declined"
+        invitation.save()
+        messages.info(request, f"You declined invite to '{invitation.group.name}'.")
+    return redirect('home')
+
+@login_required
+def group_detail(request, group_id):
+    group = get_object_or_404(Group, id=group_id)
+    # Check if user is member
+    is_member = GroupMembership.objects.filter(group=group, user=request.user).exists()
+    if not is_member:
+        messages.error(request, "You are not a member of this group.")
+        return redirect('home')
+        
+    # Get group events
+    group_events = Event.objects.filter(group=group).order_by('date', 'start_time')
+    
+    # Get members
+    members = GroupMembership.objects.filter(group=group).select_related('user')
+    
+    return render(request, 'schedules/group_detail.html', {
+        'group': group,
+        'events': group_events,
+        'members': members,
+        'is_admin': GroupMembership.objects.filter(group=group, user=request.user, is_admin=True).exists()
+    })
+
+@login_required
+def leave_group(request, group_id):
+    """Allow users to leave a group"""
+    if request.method == 'POST':
+        group = get_object_or_404(Group, id=group_id)
+        membership = get_object_or_404(GroupMembership, group=group, user=request.user)
+        
+        # Check if this is the last admin - don't allow leaving if they're the only admin
+        if membership.is_admin:
+            admin_count = GroupMembership.objects.filter(group=group, is_admin=True).count()
+            if admin_count <= 1:
+                messages.error(request, "You can't leave the group as you're the only admin. Make someone else an admin first.")
+                return redirect('group_detail', group_id=group_id)
+        
+        # Remove the membership
+        membership.delete()
+        messages.success(request, f"You have left the group '{group.name}'")
+        return redirect('home')
+    
+    return redirect('home')

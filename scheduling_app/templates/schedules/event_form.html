@@ -16,6 +16,9 @@
             Edit Event
         {% else %}
             Create Event
+            {% if group %}
+                <span class="badge bg-info">For Group: {{ group.name }}</span>
+            {% endif %}
         {% endif %}
     </h2>
 
@@ -32,22 +35,44 @@
                 {{ form.description }}
             </p>
     
+            <!-- "Quick Fill" button to set all times at once -->
+            <div class="mb-3">
+                <button type="button" id="setAllTimes" class="btn btn-outline-primary btn-sm">
+                    <i class="fas fa-clock"></i> Set all times to now
+                </button>
+            </div>
+
             <div class="date-time-group">
                 <div class="form-group">
                     {{ form.date.label_tag }}
-                    {{ form.date }}
+                    <div class="input-with-button">
+                        {{ form.date }}
+                        <button type="button" id="setDateNow" class="btn btn-outline-secondary btn-sm now-btn">
+                            Now
+                        </button>
+                    </div>
                     {{ form.date.help_text }}
                 </div>
 
                 <div class="form-group">
                     {{ form.start_time.label_tag }}
-                    {{ form.start_time }}
+                    <div class="input-with-button">
+                        {{ form.start_time }}
+                        <button type="button" id="setStartTimeNow" class="btn btn-outline-secondary btn-sm now-btn">
+                            Now
+                        </button>
+                    </div>
                     {{ form.start_time.help_text }}
                 </div>
 
                 <div class="form-group">
                     {{ form.end_time.label_tag }}
-                    {{ form.end_time }}
+                    <div class="input-with-button">
+                        {{ form.end_time }}
+                        <button type="button" id="setEndTimePlusHour" class="btn btn-outline-secondary btn-sm now-btn">
+                            Now+1h
+                        </button>
+                    </div>
                     {{ form.end_time.help_text }}
                 </div>
             </div>
@@ -80,6 +105,8 @@
                 Create Event
             {% endif %}
         </button>
+        
+        <a href="{% url 'home' %}" class="btn btn-secondary">Cancel</a>
     </form>
     
 </div>
@@ -132,6 +159,22 @@
         min-width: 0; /* Ensure the input fields don't overflow */
     }
 
+    /* Styling for input with button */
+    .input-with-button {
+        display: flex;
+        gap: 5px;
+    }
+
+    .input-with-button input {
+        flex: 1;
+    }
+
+    .now-btn {
+        white-space: nowrap;
+        height: 38px;
+        align-self: flex-start;
+    }
+
     /* Style for form-check elements */
     .form-check {
         display: flex;
@@ -165,6 +208,56 @@ document.addEventListener('DOMContentLoaded', (event) => {
     if (isRecurringCheckbox.checked) {
         recurrenceOptions.style.display = 'block';
     }
+    
+    // Set up "Now" buttons functionality
+    const dateField = document.querySelector('input[name="date"]');
+    const startTimeField = document.querySelector('input[name="start_time"]');
+    const endTimeField = document.querySelector('input[name="end_time"]');
+    
+    // Set date to today
+    document.getElementById('setDateNow').addEventListener('click', function() {
+        const today = new Date();
+        const formattedDate = today.toISOString().split('T')[0]; // Format as YYYY-MM-DD
+        dateField.value = formattedDate;
+    });
+    
+    // Set start time to now
+    document.getElementById('setStartTimeNow').addEventListener('click', function() {
+        const now = new Date();
+        const hours = String(now.getHours()).padStart(2, '0');
+        const minutes = String(now.getMinutes()).padStart(2, '0');
+        startTimeField.value = `${hours}:${minutes}`;
+    });
+    
+    // Set end time to now + 1 hour
+    document.getElementById('setEndTimePlusHour').addEventListener('click', function() {
+        const now = new Date();
+        now.setHours(now.getHours() + 1); // Add one hour
+        const hours = String(now.getHours()).padStart(2, '0');
+        const minutes = String(now.getMinutes()).padStart(2, '0');
+        endTimeField.value = `${hours}:${minutes}`;
+    });
+    
+    // Set all times at once
+    document.getElementById('setAllTimes').addEventListener('click', function() {
+        // Set date to today
+        const today = new Date();
+        const formattedDate = today.toISOString().split('T')[0];
+        dateField.value = formattedDate;
+        
+        // Set start time to now
+        const now = new Date();
+        const hours = String(now.getHours()).padStart(2, '0');
+        const minutes = String(now.getMinutes()).padStart(2, '0');
+        startTimeField.value = `${hours}:${minutes}`;
+        
+        // Set end time to now + 1 hour
+        const later = new Date();
+        later.setHours(later.getHours() + 1);
+        const endHours = String(later.getHours()).padStart(2, '0');
+        const endMinutes = String(later.getMinutes()).padStart(2, '0');
+        endTimeField.value = `${endHours}:${endMinutes}`;
+    });
 });
 </script>
 {% endblock %}
