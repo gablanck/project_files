@@ -36,10 +36,14 @@ urlpatterns = [
     path('connections/<int:connection_id>/toggle-sharing/', views.toggle_schedule_sharing, name='toggle_schedule_sharing'),
 
     path('groups/create/', views.group_create, name='group_create'),
-path('groups/<int:group_id>/invite/', views.group_invite, name='group_invite'),
+    path('groups/<int:group_id>/invite/', views.group_invite, name='group_invite'),
     path('groups/<int:group_id>/leave/', views.leave_group, name='leave_group'),
     path('group-invitation/<int:invitation_id>/accept/', views.group_accept_invite, name='group_accept_invite'),
     path('group-invitation/<int:invitation_id>/decline/', views.group_decline_invite, name='group_decline_invite'),
     path('groups/<int:group_id>/', views.group_detail, name='group_detail'),
+
+    path('profile/', views.profile_view, name='profile'),
+    path('connections/<int:user_id>/profile/', views.view_user_profile, name='view_user_profile'),
+    
 ]
 

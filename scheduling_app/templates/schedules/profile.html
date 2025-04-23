@@ -1,0 +1,123 @@
+{% extends "schedules/base.html" %}
+
+{% block title %}{{ request.user.username }}'s Profile{% endblock %}
+
+{% block content %}
+<div class="container mt-4">
+  <h2>{{ request.user.username }}'s Profile</h2>
+
+  <!-- Bio Section -->
+  <div class="card mb-4">
+    <div class="card-body">
+      <h5 class="card-title">Bio</h5>
+      <form method="post">
+        {% csrf_token %}
+        <div class="mb-3">
+          <textarea name="bio" class="form-control" rows="3" placeholder="Tell us about yourself...">{{ profile.bio }}</textarea>
+        </div>
+        <button type="submit" class="btn btn-primary">Save Bio</button>
+      </form>
+    </div>
+  </div>
+
+  <!-- First Row: Category & Day of Week -->
+  <div class="row mb-4">
+    <div class="col-md-6 mb-3">
+      <div class="card h-100">
+        <div class="card-body">
+          <h5 class="card-title">Event Category Breakdown</h5>
+          <canvas id="categoryChart" style="max-height: 250px;"></canvas>
+        </div>
+      </div>
+    </div>
+    <div class="col-md-6 mb-3">
+      <div class="card h-100">
+        <div class="card-body">
+          <h5 class="card-title">Events by Day of Week</h5>
+          <canvas id="dayChart" style="max-height: 250px;"></canvas>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Second Row: Duration & Monthly Totals -->
+  <div class="row mb-4">
+    <div class="col-md-6 mb-3">
+      <div class="card h-100">
+        <div class="card-body">
+          <h5 class="card-title">Event Duration Distribution</h5>
+          <canvas id="durationChart"></canvas>
+        </div>
+      </div>
+    </div>
+    <div class="col-md-6 mb-3">
+      <div class="card h-100">
+        <div class="card-body">
+          <h5 class="card-title">Monthly Event Totals</h5>
+          <canvas id="monthlyChart"></canvas>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script>
+  document.addEventListener('DOMContentLoaded', function () {
+    const categoryCtx = document.getElementById('categoryChart');
+    new Chart(categoryCtx, {
+      type: 'pie',
+      data: {
+        labels: {{ category_labels|safe }},
+        datasets: [{
+          label: 'Event Categories',
+          data: {{ category_counts|safe }},
+          backgroundColor: ['#36A2EB', '#FFCE56', '#4BC0C0', '#9966FF'],
+        }]
+      }
+    });
+
+    const dayCtx = document.getElementById('dayChart');
+    new Chart(dayCtx, {
+      type: 'bar',
+      data: {
+        labels: {{ weekday_labels|safe }},
+        datasets: [{
+          label: 'Events Per Day',
+          data: {{ weekday_counts|safe }},
+          backgroundColor: '#28a745'
+        }]
+      }
+    });
+
+    const durationCtx = document.getElementById('durationChart');
+    new Chart(durationCtx, {
+      type: 'bar',
+      data: {
+        labels: {{ duration_labels|safe }},
+        datasets: [{
+          label: 'Event Duration Buckets',
+          data: {{ duration_counts|safe }},
+          backgroundColor: '#17a2b8'
+        }]
+      }
+    });
+
+    const monthlyCtx = document.getElementById('monthlyChart');
+    new Chart(monthlyCtx, {
+      type: 'line',
+      data: {
+        labels: {{ month_labels|safe }},
+        datasets: [{
+          label: 'Events Per Month',
+          data: {{ month_counts|safe }},
+          fill: true,
+          backgroundColor: 'rgba(54, 162, 235, 0.2)',
+          borderColor: 'rgba(54, 162, 235, 1)',
+          tension: 0.4
+        }]
+      }
+    });
+  });
+</script>
+{% endblock %}

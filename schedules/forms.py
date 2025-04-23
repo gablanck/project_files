@@ -27,6 +27,8 @@ class EventForm(forms.ModelForm):
         required=False
     )
 
+    category = forms.ChoiceField(choices=Event.CATEGORY_CHOICES, required=True)
+
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.fields['start_time'].widget.attrs.update({'placeholder': 'HH:MM'})
@@ -34,7 +36,7 @@ class EventForm(forms.ModelForm):
     
     class Meta:
         model = Event
-        fields = ['title', 'description', 'date', 'start_time', 'end_time', 'is_recurring', 'recurrence_type', 'recurrence_end_date', 'reminder_minutes_before']
+        fields = ['title', 'description', 'date', 'start_time', 'end_time', 'is_recurring', 'recurrence_type', 'recurrence_end_date', 'reminder_minutes_before', 'category']
     
     def clean(self):
         cleaned_data = super().clean()

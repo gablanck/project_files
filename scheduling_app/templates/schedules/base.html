@@ -76,6 +76,14 @@
         background-color: #00bcd4;
         border-color: #00bcd4;
         }
+
+    .ai-button {
+      background-color: #00acc1;
+        border-color: #060b18;
+        border-width: 3px;
+        font-size: 50px;
+    }
+
     .btn-primary:hover {
         background-color: #00acc1;
         border-color: #00acc1;
@@ -98,7 +106,6 @@
   {% block extra_head %}{% endblock %}
 </head>
 <body>
-
   <nav class="navbar navbar-expand-lg navbar-dark">
     <div class="container-fluid">
       <a class="navbar-brand" href="{% url 'home' %}">📅 ScheduleApp</a>
@@ -113,6 +120,7 @@
           {% if user.is_authenticated %}
             <li class="nav-item"><a class="nav-link" href="{% url 'user_search' %}">Find Users</a></li>
             <li class="nav-item"><a class="nav-link" href="{% url 'my_connections' %}">My Connections</a></li>
+            <li class="nav-item"><a class="nav-link" href="{% url 'profile' %}">Profile</a></li>
             <li class="nav-item">
               <form id="logout-form" method="post" action="{% url 'logout' %}">
                 {% csrf_token %}
@@ -142,6 +150,25 @@
   <main class="container">
     {% block content %}{% endblock %}
   </main>
+
+  <div id="aiChatButton" style="position: fixed; bottom: 20px; right: 20px; z-index: 1050;">
+    <button class="btn btn-primary rounded-circle p-3 ai-button" title="Ask the Assistant">
+      🤖<i class="bi bi-chat-dots"></i>
+    </button>
+  </div>
+  <div id="aiChatBox" class="card shadow-lg border-0" style="position: fixed; bottom: 80px; right: 20px; width: 400px; display: none; z-index: 1051;">
+    <div class="card-header d-flex justify-content-between align-items-center">
+      <strong>AI Assistant 🤖</strong>
+      <button type="button" class="btn-close" aria-label="Close" onclick="document.getElementById('aiChatBox').style.display='none'"></button>
+    </div>
+    <div class="card-body">
+      <div class="mb-2">
+        <textarea class="form-control" id="aiQuestion" rows="3" placeholder="e.g., What events do I have this week?"></textarea>
+      </div>
+      <button class="btn btn-primary w-100" id="askAIButton">Ask</button>
+      <div id="aiResponse" class="mt-3 small text-dark" style="white-space: pre-wrap;"></div>
+    </div>
+  </div>
 
   <footer class="text-center">
     <p>&copy; 2025 ScheduleApp | Built with 💙 and Django</p>
@@ -278,6 +305,33 @@
     document.addEventListener('DOMContentLoaded', function () {
       loadNotifications(); // Fetch on load
       setInterval(loadNotifications, 30000); // Repeat every 30s
+    });
+
+    document.getElementById("aiChatButton").addEventListener("click", function () {
+      const chatBox = document.getElementById("aiChatBox");
+      chatBox.style.display = chatBox.style.display === "none" ? "block" : "none";
+    });
+
+    document.getElementById("askAIButton").addEventListener("click", function () {
+      const question = document.getElementById("aiQuestion").value;
+      const responseDiv = document.getElementById("aiResponse");
+      responseDiv.innerHTML = "<em>Thinking...</em>";
+
+      fetch("/ask-ai/", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "X-CSRFToken": getCookie("csrftoken")
+        },
+        body: JSON.stringify({ question: question })
+      })
+        .then(res => res.json())
+        .then(data => {
+          responseDiv.innerHTML = data.answer || "Sorry, I couldn't understand that.";
+        })
+        .catch(() => {
+          responseDiv.innerHTML = "There was an error processing your request.";
+        });
     });
   </script>
   

@@ -24,6 +24,32 @@ from .models import Notification
 from django.utils.timezone import now
 from django.utils import timezone
 from .forms import CommentForm
+from .models import UserProfile
+from django.contrib.auth.decorators import login_required
+from django.db.models import Count
+from .models import UserProfile, Event
+from django.contrib.auth.decorators import login_required
+from django.db.models import Count
+from django.shortcuts import render
+from datetime import timedelta
+import calendar
+from django.views.decorators.csrf import csrf_exempt
+from django.http import JsonResponse
+from django.contrib.auth.decorators import login_required
+import json
+import openai
+from django.utils.timezone import now
+from .models import Event
+from datetime import timedelta
+from openai import OpenAI
+import json
+import requests
+from django.http import JsonResponse
+from django.views.decorators.csrf import csrf_exempt
+from django.contrib.auth.decorators import login_required
+from .models import Event
+import re
+import traceback
 
 
 @login_required
@@ -849,3 +875,142 @@ def leave_group(request, group_id):
         return redirect('home')
     
     return redirect('home')
+
+@login_required
+def profile_view(request):
+    profile, _ = UserProfile.objects.get_or_create(user=request.user)
+
+    if request.method == "POST":
+        bio = request.POST.get("bio", "")
+        profile.bio = bio
+        profile.save()
+
+    # Event Category Counts
+    categories = Event.objects.filter(user=request.user).values('category').annotate(count=Count('id'))
+    category_labels = [c['category'].capitalize() for c in categories]
+    category_counts = [c['count'] for c in categories]
+
+    # Events Per Weekday (0 = Monday, 6 = Sunday)
+    weekday_counts_raw = [0] * 7
+    for e in Event.objects.filter(user=request.user):
+        weekday_counts_raw[e.date.weekday()] += 1
+    weekday_labels = list(calendar.day_name)
+    weekday_counts = weekday_counts_raw
+
+    # Duration Buckets
+    duration_labels = ["<30 mins", "30–60 mins", "1–2 hrs", ">2 hrs"]
+    duration_counts = [0, 0, 0, 0]
+    for e in Event.objects.filter(user=request.user):
+        duration = datetime.combine(e.date, e.end_time) - datetime.combine(e.date, e.start_time)
+        minutes = duration.total_seconds() / 60
+        if minutes < 30:
+            duration_counts[0] += 1
+        elif minutes < 60:
+            duration_counts[1] += 1
+        elif minutes < 120:
+            duration_counts[2] += 1
+        else:
+            duration_counts[3] += 1
+
+    # Events Per Month
+    monthly = Event.objects.filter(user=request.user)
+    month_labels = [calendar.month_name[i] for i in range(1, 13)]
+    month_counts = [0] * 12
+    for e in monthly:
+        month_counts[e.date.month - 1] += 1
+
+    return render(request, 'schedules/profile.html', {
+        "profile": profile,
+        "category_labels": category_labels,
+        "category_counts": category_counts,
+        "weekday_labels": weekday_labels,
+        "weekday_counts": weekday_counts,
+        "duration_labels": duration_labels,
+        "duration_counts": duration_counts,
+        "month_labels": month_labels,
+        "month_counts": month_counts
+    })
+
+@login_required
+def view_user_profile(request, user_id):
+    target_user = get_object_or_404(User, id=user_id)
+
+    # Check if the user is connected
+    is_connected = Connection.objects.filter(user=request.user, connected_to=target_user).exists()
+    if not is_connected:
+        messages.error(request, "You can only view the profile of users you are connected with.")
+        return redirect('my_connections')
+
+    # Load the profile and recent events
+    target_profile, _ = UserProfile.objects.get_or_create(user=target_user)
+    target_events = Event.objects.filter(user=target_user).order_by('-date')[:10]  # last 10 events
+
+    return render(request, 'schedules/view_user_profile.html', {
+        'target_user': target_user,
+        'target_profile': target_profile,
+        'target_events': target_events,
+    })
+
+@csrf_exempt
+@login_required
+def ask_ai(request):
+    if request.method == "POST":
+        try:
+            data = json.loads(request.body)
+            question = data.get("question", "").strip()
+
+            # Get user's actual events
+            user_events = Event.objects.filter(user=request.user).order_by('date', 'start_time')
+            event_lines = [f"- {e.title} on {e.date} from {e.start_time} to {e.end_time}" for e in user_events[:10]]
+            event_context = "\n".join(event_lines) or "(No events found.)"
+
+            # Compose prompt
+            prompt = (
+                "You are a scheduling assistant. The user may ask to create a new event or ask about upcoming events or existing ones.\n"
+                "If they want to create an event, respond ONLY with JSON like:\n"
+                '{\"title\": \"Gym\", \"date\": \"2025-04-28\", \"start_time\": \"18:00\", \"end_time\": \"20:00\"}\n'
+                "Do NOT add explanations or format it like a message. Only output JSON.\n"
+                "If you're unsure, say: I need more information.\n\n"
+                " Use the events below to answer any questions about their schedule."
+                f"Events:\n{event_context or 'No events yet.'}\n\n"
+                f"User: {question}\nAssistant:"
+            )
+
+            # Call Mixtral via /api/generate
+            response = requests.post("http://localhost:11434/api/generate", json={
+                "model": "mixtral",
+                "prompt": prompt,
+                "stream": False
+            })
+
+            response.raise_for_status()
+            reply = response.json().get("response", "").strip()
+            print("🧠 Raw AI Reply:", repr(reply))
+
+            # Try parsing JSON for new event
+            try:
+                json_match = re.search(r'\{[^{}]+\}', reply)
+                if json_match:
+                    event_data = json.loads(json_match.group())
+                    if all(k in event_data for k in ["title", "date", "start_time", "end_time"]):
+                        Event.objects.create(
+                            user=request.user,
+                            title=event_data["title"],
+                            date=event_data["date"],
+                            start_time=event_data["start_time"],
+                            end_time=event_data["end_time"],
+                            description="(Created by AI Assistant)"
+                        )
+                        return JsonResponse({"answer": f"✅ Event '{event_data['title']}' was successfully created!"})
+            except Exception as parse_err:
+                print("❌ JSON parse error:", parse_err)
+
+            return JsonResponse({"answer": reply or "🤖 I couldn't understand that. Please try again."})
+
+        except Exception as e:
+            import traceback
+            print("🔥 Error in ask_ai():")
+            traceback.print_exc()
+            return JsonResponse({"error": str(e)}, status=500)
+
+    return JsonResponse({"error": "Invalid request method"}, status=400)
