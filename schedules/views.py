@@ -10,6 +10,7 @@ from .forms import RegisterForm
 from django.contrib.auth.models import User 
 from django.http import JsonResponse
 from django.db.models import Q
+from django.db import transaction, IntegrityError
 from django.contrib import messages
 from datetime import datetime, time
 from django.views.decorators.csrf import csrf_exempt
@@ -50,7 +51,11 @@ from django.contrib.auth.decorators import login_required
 from .models import Event
 import re
 import traceback
-
+from django.views.decorators.http import require_POST
+from django.http import JsonResponse
+from django.contrib.auth.decorators import login_required
+from django.views.decorators.http import require_POST
+from django.http import JsonResponse
 
 @login_required
 def home(request):
@@ -389,29 +394,33 @@ def connect_user(request, user_id):
                 messages.info(request, f'Already connected with {user_to_connect.username}')
                 return redirect('user_search')
                 
-            # Check if request already sent
+            # Check if request already sent (either direction)
             request_exists = ConnectionRequest.objects.filter(
-                sender=request.user, 
-                receiver=user_to_connect,
+                (Q(sender=request.user, receiver=user_to_connect) | 
+                 Q(sender=user_to_connect, receiver=request.user)),
                 accepted=False
             ).exists()
             
             if request_exists:
-                messages.info(request, f'Connection request already sent to {user_to_connect.username}')
+                messages.info(request, f'Connection request already exists with {user_to_connect.username}')
             else:
-                # Create new connection request
-                ConnectionRequest.objects.create(
-                    sender=request.user,
-                    receiver=user_to_connect
-                )
-                
-                # Create notification for the receiver
-                Notification.objects.create(
-                    user=user_to_connect,
-                    message=f"{request.user.username} sent you a connection request"
-                )
-                
-                messages.success(request, f'Connection request sent to {user_to_connect.username}')
+                try:
+                    # Create new connection request with transaction handling
+                    with transaction.atomic():
+                        ConnectionRequest.objects.create(
+                            sender=request.user,
+                            receiver=user_to_connect
+                        )
+                        
+                        # Create notification for the receiver
+                        Notification.objects.create(
+                            user=user_to_connect,
+                            message=f"{request.user.username} sent you a connection request"
+                        )
+                    
+                    messages.success(request, f'Connection request sent to {user_to_connect.username}')
+                except IntegrityError:
+                    messages.warning(request, f"Couldn't send request to {user_to_connect.username}. A request may already exist.")
         except User.DoesNotExist:
             messages.error(request, "User not found")
     return redirect('user_search')
@@ -566,6 +575,34 @@ def cancel_request(request, request_id):
             messages.error(request, f"Error canceling connection request: {str(e)}")
     
     return redirect('my_connections')
+
+@login_required
+def cancel_request_from_search(request, user_id):
+    """
+    View for canceling a connection request from the user search page
+    """
+    if request.method == 'POST':
+        try:
+            # Find the connection request
+            conn_request = ConnectionRequest.objects.get(
+                sender=request.user,
+                receiver_id=user_id,
+                accepted=False
+            )
+            
+            # Store receiver's username for the message
+            receiver_name = conn_request.receiver.username
+            
+            # Delete the connection request
+            conn_request.delete()
+            
+            messages.success(request, f"Connection request to {receiver_name} canceled")
+        except ConnectionRequest.DoesNotExist:
+            messages.error(request, "Connection request not found")
+        except Exception as e:
+            messages.error(request, f"Error canceling request: {str(e)}")
+    
+    return redirect('user_search')
 
 @login_required
 def get_events_api(request):
@@ -815,22 +852,90 @@ def group_invite(request, group_id):
 
 @login_required
 def group_accept_invite(request, invitation_id):
-    invitation = get_object_or_404(GroupInvitation, id=invitation_id, invited_user=request.user)
-    if invitation.status == "pending":
-        # Accepting invitation
-        GroupMembership.objects.create(group=invitation.group, user=request.user)
-        invitation.status = "accepted"
-        invitation.save()
-        messages.success(request, f"You joined group '{invitation.group.name}'.")
+    """
+    View for accepting a group invitation
+    """
+    if request.method == 'POST':
+        try:
+            # Get the invitation and verify it's for this user
+            invitation = get_object_or_404(
+                GroupInvitation,
+                id=invitation_id,
+                invited_user=request.user,
+                status='pending'
+            )
+            
+            # Use transaction to ensure data consistency
+            with transaction.atomic():
+                # Create the group membership
+                GroupMembership.objects.create(
+                    group=invitation.group,
+                    user=request.user,
+                    is_admin=False,
+                    show_in_calendar=True  # Default to showing in calendar
+                )
+                
+                # Update invitation status
+                invitation.status = 'accepted'
+                invitation.save()
+                
+                # Create notification for the inviter
+                Notification.objects.create(
+                    user=invitation.invited_by,
+                    message=f"{request.user.username} accepted your invitation to join {invitation.group.name}"
+                )
+                
+                messages.success(request, f"You have successfully joined {invitation.group.name}")
+                
+        except IntegrityError:
+            messages.error(request, "You are already a member of this group")
+        except Exception as e:
+            messages.error(request, f"Error accepting invitation: {str(e)}")
+    else:
+        invitation = get_object_or_404(GroupInvitation, id=invitation_id, invited_user=request.user)
+        if invitation.status == "pending":
+            # Accepting invitation
+            GroupMembership.objects.create(group=invitation.group, user=request.user)
+            invitation.status = "accepted"
+            invitation.save()
+            messages.success(request, f"You joined group '{invitation.group.name}'.")
     return redirect('home')
 
 @login_required
-def group_decline_invite(request, invitation_id):
-    invitation = get_object_or_404(GroupInvitation, id=invitation_id, invited_user=request.user)
-    if invitation.status == "pending":
-        invitation.status = "declined"
-        invitation.save()
-        messages.info(request, f"You declined invite to '{invitation.group.name}'.")
+def group_decline_invite(_inviterequest, invitation_id):
+    """
+    View for declining a group invitation
+    """
+    if request.method == 'POST':
+        try:
+            # Get the invitation and verify it's for this user
+            invitation = get_object_or_404(
+                GroupInvitation,
+                id=invitation_id,
+                invited_user=request.user,
+                status='pending'
+            )
+            
+            # Update invitation status
+            invitation.status = 'declined'
+            invitation.save()
+            
+            # Create notification for the inviter
+            Notification.objects.create(
+                user=invitation.invited_by,
+                message=f"{request.user.username} declined your invitation to join {invitation.group.name}"
+            )
+            
+            messages.success(request, f"You have declined the invitation to {invitation.group.name}")
+            
+        except Exception as e:
+            messages.error(request, f"Error declining invitation: {str(e)}")
+    else:
+        invitation = get_object_or_404(GroupInvitation, id=invitation_id, invited_user=request.user)
+        if invitation.status == "pending":
+            invitation.status = "declined"
+            invitation.save()
+            messages.info(request, f"You declined invite to '{invitation.group.name}'.")
     return redirect('home')
 
 @login_required
@@ -1014,3 +1119,22 @@ def ask_ai(request):
             return JsonResponse({"error": str(e)}, status=500)
 
     return JsonResponse({"error": "Invalid request method"}, status=400)
+
+@login_required
+@require_POST
+def toggle_group_visibility(request, group_id):
+    """
+    Toggle whether a group's events are visible in the user's calendar view.
+    This affects only the current user's view of the group events.
+    """
+    try:
+        membership = GroupMembership.objects.get(
+            group_id=group_id,
+            user=request.user
+        )
+        visibility = request.POST.get('visibility') == 'true'
+        membership.show_in_calendar = visibility
+        membership.save()
+        return JsonResponse({'success': True})
+    except GroupMembership.DoesNotExist:
+        return JsonResponse({'success': False, 'error': 'Membership not found'}, status=404)

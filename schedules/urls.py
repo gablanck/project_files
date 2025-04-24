@@ -20,6 +20,7 @@ urlpatterns = [
     path('users/search/', views.user_search, name='user_search'),
     path('users/connect/<int:user_id>/', views.connect_user, name='connect_user'),
     path('users/disconnect/<int:user_id>/', views.disconnect_user, name='disconnect_user'),
+    path('users/cancel-request/<int:user_id>/', views.cancel_request_from_search, name='cancel_request_from_search'),
     path('my-connections/', views.my_connections, name='my_connections'),
 
     path('notifications/', views.get_notifications, name='get_notifications'),
@@ -38,8 +39,8 @@ urlpatterns = [
     path('groups/create/', views.group_create, name='group_create'),
     path('groups/<int:group_id>/invite/', views.group_invite, name='group_invite'),
     path('groups/<int:group_id>/leave/', views.leave_group, name='leave_group'),
-    path('group-invitation/<int:invitation_id>/accept/', views.group_accept_invite, name='group_accept_invite'),
-    path('group-invitation/<int:invitation_id>/decline/', views.group_decline_invite, name='group_decline_invite'),
+    path('group/invitation/<int:invitation_id>/accept/', views.group_accept_invite, name='group_accept_invite'),
+    path('group/invitation/<int:invitation_id>/reject/', views.group_decline_invite, name='group_decline_invite'),
     path('groups/<int:group_id>/', views.group_detail, name='group_detail'),
 
     path('profile/', views.profile_view, name='profile'),

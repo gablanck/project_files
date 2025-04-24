@@ -19,6 +19,7 @@ class GroupMembership(models.Model):
     user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='group_memberships')
     is_admin = models.BooleanField(default=False)
     joined_at = models.DateTimeField(auto_now_add=True)
+    show_in_calendar = models.BooleanField(default=True)  # Controls visibility of group events in user's calendar
 
     class Meta:
         unique_together = ('group', 'user')

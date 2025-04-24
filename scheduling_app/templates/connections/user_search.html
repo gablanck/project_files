@@ -3,54 +3,62 @@
 {% block content %}
 <div class="container mt-4">
     <h2>Find Users</h2>
-    
-    {% if messages %}
-    <div class="messages">
-        {% for message in messages %}
-        <div class="alert alert-{{ message.tags }}">
-            {{ message }}
+  
+    <!-- Search form -->
+    <form method="GET" class="mb-4">
+      <div class="input-group">
+        <input
+          type="text"
+          name="q"
+          class="form-control"
+          placeholder="Search by username or email"
+          value="{{ query }}"
+        />
+        <div class="input-group-append">
+          <button type="submit" class="btn btn-primary">Search</button>
         </div>
-        {% endfor %}
-    </div>
-    {% endif %}
-    
-    <form method="GET" action="{% url 'user_search' %}" class="mb-4">
-        <div class="input-group">
-            <input type="text" name="q" class="form-control" placeholder="Search users..." value="{{ query }}">
-            <div class="input-group-append">
-                <button class="btn btn-primary" type="submit">Search</button>
-            </div>
-        </div>
+      </div>
     </form>
-
+  
+    <!-- Users grid -->
     <div class="row">
-        {% if users %}
-            {% for user in users %}
-            <div class="col-md-4 mb-3">
-                <div class="card">
-                    <div class="card-body">
-                        <h5 class="card-title">{{ user.username }}</h5>
-                        <p class="card-text">{{ user.email }}</p>
+        {% for user in users %}
+        <div class="col-md-4 mb-3">
+            <div class="card">
+                <div class="card-body">
+                    <h5 class="card-title">{{ user.username }}</h5>
+                    <p class="card-text text-muted">{{ user.email }}</p>
+                    
+                    <div class="mt-3">
                         {% if user.is_connected %}
-                            <form method="POST" action="{% url 'disconnect_user' user.id %}">
-                                {% csrf_token %}
-                                <button type="submit" class="btn btn-danger">Disconnect</button>
-                            </form>
+                            <span class="badge bg-success">Connected</span>
+                        {% elif user.request_received %}
+                            <span class="badge bg-info">Request Received</span>
+                        {% elif user.request_sent %}
+                            <div class="d-flex justify-content-between align-items-center">
+                                <span class="badge bg-warning me-2">Request Pending</span>
+                                <form method="POST" action="{% url 'cancel_request_from_search' user.id %}" class="d-inline">
+                                    {% csrf_token %}
+                                    <button type="submit" class="btn btn-sm btn-danger">Cancel Request</button>
+                                </form>
+                            </div>
                         {% else %}
-                            <form method="POST" action="{% url 'connect_user' user.id %}">
+                            <form method="POST" action="{% url 'connect_user' user.id %}" class="d-inline">
                                 {% csrf_token %}
-                                <button type="submit" class="btn btn-success">Connect</button>
+                                <button type="submit" class="btn btn-sm btn-primary">Connect</button>
                             </form>
                         {% endif %}
                     </div>
                 </div>
             </div>
-            {% endfor %}
-        {% else %}
-            <div class="col-12">
-                <p>No users found.</p>
-            </div>
-        {% endif %}
+        </div>
+        {% empty %}
+        <div class="col-12">
+            <div class="alert alert-info">No users found.</div>
+        </div>
+        {% endfor %}
     </div>
-</div>
+  </div>
+
+  
 {% endblock %}
