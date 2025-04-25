@@ -59,11 +59,20 @@ class Event(models.Model):
     )
     recurrence_end_date = models.DateField(blank=True, null=True)
     reminder_minutes_before = models.IntegerField(default=15)
+    recurring_parent = models.ForeignKey(
+        'self',
+        on_delete=models.CASCADE,
+        null=True,
+        blank=True,
+        related_name='recurrences'
+    )
 
     CATEGORY_CHOICES = [
         ('personal', 'Personal'),
         ('work', 'Work'),
         ('school', 'School'),
+        ("fun", "Fun"),
+        ("gym", "Gym"),
         ('other', 'Other'),
     ]
     category = models.CharField(max_length=20, choices=CATEGORY_CHOICES, default='personal')

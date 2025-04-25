@@ -57,10 +57,16 @@ from django.contrib.auth.decorators import login_required
 from django.views.decorators.http import require_POST
 from django.http import JsonResponse
 
+
 @login_required
 def home(request):
     # Separate personal events (not in any group)
-    events = Event.objects.filter(user=request.user, group__isnull=True).order_by('date', 'start_time')
+    events = Event.objects.filter(
+        user=request.user,
+        group__isnull=True,
+        recurring_parent__isnull=True  # Only original/parent events
+    ).order_by('date', 'start_time')
+
 
     # Find all group memberships for user
     memberships = GroupMembership.objects.filter(user=request.user).select_related('group')
@@ -178,7 +184,8 @@ def create_or_edit_event(request, event_id=None):
                         start_time=event.start_time,
                         end_time=event.end_time,
                         is_shared=event.is_shared,
-                        is_recurring=False  # prevent child events from looping
+                        is_recurring=False,  # prevent child events from looping
+                        recurring_parent=event
                     )
 
             return redirect('home')
@@ -264,9 +271,14 @@ def schedule_view(request):
     
 @login_required
 def get_calendar_events(request):
-    # Get user's own events
-    events = list(Event.objects.filter(user=request.user))
-    print(f"User's own events: {len(events)}")
+    CATEGORY_COLORS = {
+        "personal": "#007bff",
+        "work": "#0ec9a3",
+        "school": "#28a745",
+        "fun": "#ffc107",
+        "gym": "#ff8800",
+        "other": "#ff0000"
+    }
     
     # Get connected users with sharing enabled
     connected_users = Connection.objects.filter(
@@ -274,62 +286,50 @@ def get_calendar_events(request):
         share_schedule=True
     ).values_list('connected_to', flat=True)
     print(f"Connected users with sharing enabled: {list(connected_users)}")
+
+    # Get user's own events
+    events = Event.objects.filter(
+        Q(user=request.user) | Q(user__in=connected_users),
+        group__isnull=True
+    ).exclude(
+        is_recurring=True,  # Exclude parents
+        recurring_parent__isnull=True  # Only if they are actual parents
+    ).order_by('date', 'start_time')
+
+    print(f"User's own events: {len(events)}")
+    
+    calendar_events = []
     
     # Get all events from connected users (ignore is_shared flag)
     connected_events = Event.objects.filter(user__in=connected_users)
     print(f"Connected events: {len(list(connected_events))}")
     calendar_events = []
-    all_events = events + list(connected_events)
+    all_events = list(events) + list(connected_events)
 
     for event in all_events:
         is_owner = event.user == request.user
         start_dt = datetime.combine(event.date, event.start_time or time(0, 0))
         end_dt = datetime.combine(event.date, event.end_time or time(23, 59))
 
+        #bg_color = YOUR_EVENT_COLOR if is_owner else color
+
         calendar_events.append({
             'id': event.id,
-            'title': f"{event.title} ({event.user.username})" if not is_owner else event.title,
+            'title': f"👤 {event.title}" if is_owner else f"🤝 {event.title}",
             'start': start_dt.isoformat(),
             'end': end_dt.isoformat(),
             'description': event.description,
             'allDay': False,
-            'backgroundColor': '#3788d8' if is_owner else '#28a745',
-            'borderColor': '#3788d8' if is_owner else '#28a745',
+            'backgroundColor': "#2c5364",
+            'borderColor': CATEGORY_COLORS.get(event.category, "#cccccc"),
             'textColor': '#ffffff',
             'editable': is_owner,
             'extendedProps': {
-                'creatorId': str(event.user.id),  # Add this line
-                'creatorName': event.user.username  # Optional: include creator's name
+                'creatorId': event.user.id,
+                'creatorName': event.user.username,
+                'isOwner': is_owner,
             }
         })
-        # Handle recurrence
-        if event.is_recurring and event.recurrence_end_date:
-            current_date = event.date
-            while True:
-                if event.recurrence_type == 'daily':
-                    current_date += timedelta(days=1)
-                elif event.recurrence_type == 'weekly':
-                    current_date += timedelta(weeks=1)
-                else:
-                    break
-
-                if current_date > event.recurrence_end_date:
-                    break
-
-                recur_start = datetime.combine(current_date, event.start_time or time(0, 0))
-                recur_end = datetime.combine(current_date, event.end_time or time(23, 59))
-
-                calendar_events.append({
-                    'id': f"{event.id}-{current_date.isoformat()}",  # pseudo-unique ID
-                    'title': f"{event.title} ({event.user.username})" if not is_owner else event.title,
-                    'start': recur_start.isoformat(),
-                    'end': recur_end.isoformat(),
-                    'description': event.description,
-                    'backgroundColor': '#3788d8' if is_owner else '#28a745',
-                    'borderColor': '#3788d8' if is_owner else '#28a745',
-                    'textColor': '#ffffff',
-                    'editable': False  # You can make them read-only unless you handle recurrence updates
-                })
 
     return JsonResponse(calendar_events, safe=False)
 @login_required
@@ -953,7 +953,7 @@ def group_detail(request, group_id):
     # Get members
     members = GroupMembership.objects.filter(group=group).select_related('user')
     
-    return render(request, 'schedules/group_detail.html', {
+    return render(request, 'schedules/home.html', {
         'group': group,
         'events': group_events,
         'members': members,
@@ -962,24 +962,17 @@ def group_detail(request, group_id):
 
 @login_required
 def leave_group(request, group_id):
-    """Allow users to leave a group"""
-    if request.method == 'POST':
-        group = get_object_or_404(Group, id=group_id)
-        membership = get_object_or_404(GroupMembership, group=group, user=request.user)
-        
-        # Check if this is the last admin - don't allow leaving if they're the only admin
-        if membership.is_admin:
-            admin_count = GroupMembership.objects.filter(group=group, is_admin=True).count()
-            if admin_count <= 1:
-                messages.error(request, "You can't leave the group as you're the only admin. Make someone else an admin first.")
-                return redirect('group_detail', group_id=group_id)
-        
-        # Remove the membership
-        membership.delete()
-        messages.success(request, f"You have left the group '{group.name}'")
-        return redirect('home')
-    
+    if request.method != 'POST':
+        messages.info(request, "You must use the Leave Group button.")
+        return redirect('group_detail', group_id=group_id)
+
+    group = get_object_or_404(Group, id=group_id)
+    membership = get_object_or_404(GroupMembership, group=group, user=request.user)
+
+    membership.delete()
+    messages.success(request, f"You have left the group '{group.name}'.")
     return redirect('home')
+
 
 @login_required
 def profile_view(request):
@@ -1062,14 +1055,66 @@ def ask_ai(request):
     if request.method == "POST":
         try:
             data = json.loads(request.body)
-            question = data.get("question", "").strip()
+            question = data.get("question", "").strip().lower()
 
-            # Get user's actual events
+            # 💡 SMART SUGGESTIONS: Free time detection
+            match = re.search(r'(\d+)\s*(minute|hour)', question)
+            if ("free" in question or "available" in question) and match:
+                value = int(match.group(1))
+                unit = match.group(2)
+                duration = value * 60 if unit == "hour" else value
+
+                user_events = Event.objects.filter(user=request.user).order_by('date', 'start_time')
+                events = []
+                for e in user_events:
+                    start_dt = datetime.combine(e.date, e.start_time)
+                    end_dt = datetime.combine(e.date, e.end_time)
+                    events.append({'start_time': start_dt, 'end_time': end_dt})
+
+                slots = find_available_slots(events, duration)
+
+                return JsonResponse({
+                    "answer_type": "suggestion",
+                    "title": "Here are your available time slots:",
+                    "slots": [
+                        {
+                            "start": slot["start"].strftime("%Y-%m-%d %H:%M"),
+                            "end": slot["end"].strftime("%Y-%m-%d %H:%M")
+                        }
+                        for slot in slots
+                    ]
+                })
+
+            # ⚠️ CONFLICT DETECTION
+            if "conflict" in question or "overlap" in question:
+                user_events = Event.objects.filter(user=request.user).order_by('date', 'start_time')
+                formatted = []
+                for e in user_events:
+                    formatted.append({
+                        "title": e.title,
+                        "start_time": datetime.combine(e.date, e.start_time),
+                        "end_time": datetime.combine(e.date, e.end_time)
+                    })
+
+                conflicts = find_conflicts(formatted)
+
+                if not conflicts:
+                    return JsonResponse({"answer": "✅ No overlapping events found. You're all clear!"})
+
+                return JsonResponse({
+                    "answer_type": "conflict_report",
+                    "title": "⚠️ Conflicting Events Found",
+                    "conflicts": conflicts
+                })
+
+
+
+            # 🤖 Default: fallback to Mixtral AI assistant
             user_events = Event.objects.filter(user=request.user).order_by('date', 'start_time')
             event_lines = [f"- {e.title} on {e.date} from {e.start_time} to {e.end_time}" for e in user_events[:10]]
             event_context = "\n".join(event_lines) or "(No events found.)"
 
-            # Compose prompt
+                # Compose prompt
             prompt = (
                 "You are a scheduling assistant. The user may ask to create a new event or ask about upcoming events or existing ones.\n"
                 "If they want to create an event, respond ONLY with JSON like:\n"
@@ -1081,7 +1126,7 @@ def ask_ai(request):
                 f"User: {question}\nAssistant:"
             )
 
-            # Call Mixtral via /api/generate
+                # Call Mixtral via /api/generate
             response = requests.post("http://localhost:11434/api/generate", json={
                 "model": "mixtral",
                 "prompt": prompt,
@@ -1138,3 +1183,44 @@ def toggle_group_visibility(request, group_id):
         return JsonResponse({'success': True})
     except GroupMembership.DoesNotExist:
         return JsonResponse({'success': False, 'error': 'Membership not found'}, status=404)
+
+def find_available_slots(events, duration_minutes):
+    """Find available time slots based on sorted event list."""
+    slots = []
+    events = sorted(events, key=lambda e: e['start_time'])
+    day_start = datetime.combine(events[0]['start_time'].date(), datetime.min.time()) + timedelta(hours=8)
+    day_end = datetime.combine(events[0]['start_time'].date(), datetime.min.time()) + timedelta(hours=22)
+
+    # Check for slot before the first event
+    if (events[0]['start_time'] - day_start).total_seconds() >= duration_minutes * 60:
+        slots.append({'start': day_start, 'end': events[0]['start_time']})
+
+    for i in range(len(events) - 1):
+        gap = (events[i+1]['start_time'] - events[i]['end_time']).total_seconds()
+        if gap >= duration_minutes * 60:
+            slots.append({'start': events[i]['end_time'], 'end': events[i+1]['start_time']})
+
+    # Check for slot after the last event
+    if (day_end - events[-1]['end_time']).total_seconds() >= duration_minutes * 60:
+        slots.append({'start': events[-1]['end_time'], 'end': day_end})
+
+    return slots
+
+def find_conflicts(events):
+    """Return list of overlapping event pairs"""
+    conflicts = []
+    events = sorted(events, key=lambda e: e['start_time'])
+
+    for i in range(len(events) - 1):
+        current = events[i]
+        next_event = events[i + 1]
+        if current['end_time'] > next_event['start_time']:
+            conflicts.append({
+                "date": current['start_time'].date().isoformat(),
+                "events": [current['title'], next_event['title']],
+                "times": [
+                    f"{current['start_time'].strftime('%H:%M')} - {current['end_time'].strftime('%H:%M')}",
+                    f"{next_event['start_time'].strftime('%H:%M')} - {next_event['end_time'].strftime('%H:%M')}"
+                ]
+            })
+    return conflicts

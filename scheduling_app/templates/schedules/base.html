@@ -102,6 +102,19 @@
       background-color: #c0392b;
       border-color: #c0392b;
     }
+
+    .suggestion-block {
+      background-color: #f0f8ff;
+      padding: 12px;
+      border-left: 4px solid #4a90e2;
+      margin: 8px 0;
+      border-radius: 8px;
+    }
+    .suggestion-block h4 {
+      margin-top: 0;
+      font-size: 1.1rem;
+    }
+
   </style>
   {% block extra_head %}{% endblock %}
 </head>
@@ -327,12 +340,62 @@
       })
         .then(res => res.json())
         .then(data => {
-          responseDiv.innerHTML = data.answer || "Sorry, I couldn't understand that.";
+          const divider = document.createElement("hr");
+          responseDiv.appendChild(divider);
+
+          // ✅ Time Slot Suggestions
+          if (data.answer_type === "suggestion") {
+            const container = document.createElement("div");
+            container.classList.add("suggestion-block");
+
+            const title = document.createElement("h4");
+            title.textContent = data.title || "Available Time Slots:";
+            container.appendChild(title);
+
+            data.slots.forEach(slot => {
+              const slotEl = document.createElement("p");
+              slotEl.textContent = `🕒 ${slot.start} → ${slot.end}`;
+              container.appendChild(slotEl);
+            });
+
+            responseDiv.appendChild(container);
+
+          // ✅ Conflict Report
+          } else if (data.answer_type === "conflict_report") {
+            const container = document.createElement("div");
+            container.classList.add("suggestion-block");
+
+            const title = document.createElement("h4");
+            title.textContent = data.title || "Conflicting Events Found:";
+            container.appendChild(title);
+
+            data.conflicts.forEach(conflict => {
+              const block = document.createElement("div");
+              block.innerHTML = `
+                <p><strong>${conflict.date}</strong></p>
+                <ul>
+                  <li>${conflict.events[0]} (${conflict.times[0]})</li>
+                  <li>${conflict.events[1]} (${conflict.times[1]})</li>
+                </ul>
+              `;
+              container.appendChild(block);
+            });
+
+            responseDiv.appendChild(container);
+
+          // 💬 Fallback to plain text
+          } else if (data.answer) {
+            const textEl = document.createElement("p");
+            textEl.textContent = data.answer;
+            responseDiv.appendChild(textEl);
+          } else {
+            responseDiv.innerHTML = "Sorry, I couldn't understand that.";
+          }
         })
         .catch(() => {
           responseDiv.innerHTML = "There was an error processing your request.";
         });
-    });
+      });
   </script>
   
   
