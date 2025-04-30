@@ -56,7 +56,10 @@ from django.http import JsonResponse
 from django.contrib.auth.decorators import login_required
 from django.views.decorators.http import require_POST
 from django.http import JsonResponse
-
+from django.utils.timezone import make_aware, is_naive
+import pytz
+from django.conf import settings
+from django.utils.dateparse import parse_datetime
 
 @login_required
 def home(request):
@@ -288,9 +291,17 @@ def get_calendar_events(request):
     print(f"Connected users with sharing enabled: {list(connected_users)}")
 
     # Get user's own events
+    # Group memberships with calendar visibility
+    group_ids = GroupMembership.objects.filter(
+        user=request.user,
+        show_in_calendar=True
+    ).values_list('group_id', flat=True)
+
+    # Fetch events: personal + connected + group-visible
     events = Event.objects.filter(
-        Q(user=request.user) | Q(user__in=connected_users),
-        group__isnull=True
+        Q(user=request.user, group__isnull=True) |
+        Q(user__in=connected_users, group__isnull=True) |
+        Q(group_id__in=group_ids)
     ).exclude(
         is_recurring=True,  # Exclude parents
         recurring_parent__isnull=True  # Only if they are actual parents
@@ -635,54 +646,75 @@ def get_events_api(request):
 @csrf_exempt
 @login_required
 def update_event(request, event_id):
+    from django.utils.timezone import make_aware, is_naive
+    import pytz
+    from django.conf import settings
+
     if request.method == 'POST':
         try:
             data = json.loads(request.body)
             event = Event.objects.get(id=event_id, user=request.user)
-            
-            # Get the explicit date components if available
+
             event_date = data.get('date')
             start_time_str = data.get('startTime')
             end_time_str = data.get('endTime')
-            
-            # If explicit components are provided, use them
+
             if event_date and start_time_str and not data.get('preserveTime', False):
-                # Parse the date
                 from datetime import datetime, time
-                
-                # Update just the date
+
                 event.date = datetime.strptime(event_date, '%Y-%m-%d').date()
-                
-                # Update the time if not preserving it
-                start_time_parts = start_time_str.split(':')
+
+                start_parts = start_time_str.split(':')
                 event.start_time = time(
-                    int(start_time_parts[0]), 
-                    int(start_time_parts[1]),
-                    int(start_time_parts[2].split('.')[0]) if '.' in start_time_parts[2] else int(start_time_parts[2])
+                    int(start_parts[0]),
+                    int(start_parts[1]),
+                    int(start_parts[2].split('.')[0]) if '.' in start_parts[2] else int(start_parts[2])
                 )
-                
-                # Update end time if provided
+
                 if end_time_str:
-                    end_time_parts = end_time_str.split(':')
+                    end_parts = end_time_str.split(':')
                     event.end_time = time(
-                        int(end_time_parts[0]), 
-                        int(end_time_parts[1]),
-                        int(end_time_parts[2].split('.')[0]) if '.' in end_time_parts[2] else int(end_time_parts[2])
+                        int(end_parts[0]),
+                        int(end_parts[1]),
+                        int(end_parts[2].split('.')[0]) if '.' in end_parts[2] else int(end_parts[2])
                     )
             else:
-                # Handle the ISO string approach (but be cautious of timezone issues)
-                start = parse_datetime(data['start'])
-                end = parse_datetime(data['end']) if data.get('end') else None
-                
-                # Update the date in all cases
+                start_raw = data.get("start")
+                end_raw = data.get("end")
+                print(f"[DEBUG] Incoming start: {start_raw}")
+                print(f"[DEBUG] Incoming end: {end_raw}")
+
+                start = parse_datetime(start_raw)
+                end = parse_datetime(end_raw) if end_raw else None
+
+                print(f"[DEBUG] Parsed naive start: {start} (tzinfo={start.tzinfo})")
+
+                # Ensure timezone-aware in local timezone
+                local_tz = pytz.timezone(settings.TIME_ZONE)
+
+                if is_naive(start):
+                    start = make_aware(start, timezone=local_tz)
+                    print(f"[DEBUG] Converted start to aware: {start} (local tz: {local_tz})")
+                else:
+                    start = start.astimezone(local_tz)
+                    print(f"[DEBUG] Converted start to local tz: {start}")
+
+                if end:
+                    if is_naive(end):
+                        end = make_aware(end, timezone=local_tz)
+                        print(f"[DEBUG] Converted end to aware: {end}")
+                    else:
+                        end = end.astimezone(local_tz)
+                        print(f"[DEBUG] Converted end to local tz: {end}")
+
                 event.date = start.date()
-                
-                # Only update time if not preserving it
+
                 if not data.get('preserveTime', False):
                     event.start_time = start.time()
                     if end:
                         event.end_time = end.time()
 
+            # ✅ This must run in both branches
             event.save()
 
             return JsonResponse({
@@ -695,12 +727,15 @@ def update_event(request, event_id):
                     'end_time': event.end_time.isoformat() if event.end_time else None
                 }
             })
+
         except Exception as e:
             import traceback
             traceback.print_exc()
             return JsonResponse({'success': False, 'error': str(e)})
 
     return JsonResponse({'success': False, 'error': 'Invalid method'})
+
+
 
 @login_required
 def get_notifications(request):

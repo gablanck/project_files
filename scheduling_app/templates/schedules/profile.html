@@ -72,7 +72,14 @@
         datasets: [{
           label: 'Event Categories',
           data: {{ category_counts|safe }},
-          backgroundColor: ['#36A2EB', '#FFCE56', '#4BC0C0', '#9966FF'],
+          backgroundColor: [
+            '#36A2EB', // personal
+            '#FFCE56', // work
+            '#4BC0C0', // school
+            '#9966FF', // fun
+            '#FF6384', // gym
+            '#8E8E93'  // other
+          ],
         }]
       }
     });
