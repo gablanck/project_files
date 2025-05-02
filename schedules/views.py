@@ -314,13 +314,17 @@ def get_calendar_events(request):
     # Get all events from connected users (ignore is_shared flag)
     connected_events = Event.objects.filter(user__in=connected_users)
     print(f"Connected events: {len(list(connected_events))}")
-    calendar_events = []
-    all_events = list(events) + list(connected_events)
+    
+    all_events = list(events) 
 
     for event in all_events:
         is_owner = event.user == request.user
         start_dt = datetime.combine(event.date, event.start_time or time(0, 0))
         end_dt = datetime.combine(event.date, event.end_time or time(23, 59))
+        print(f"Event ID {event.id} | Title: {event.title} | Category: {event.category}")
+        category = event.recurring_parent.category if hasattr(event, 'recurring_parent') and event.recurring_parent else event.category
+        tag_color = CATEGORY_COLORS.get(category, "#cccccc")
+        print(f"Event ID {event.id} | Title: {event.title} | Raw category: {event.category} | Final used category: {category}")
 
         #bg_color = YOUR_EVENT_COLOR if is_owner else color
 
@@ -332,17 +336,19 @@ def get_calendar_events(request):
             'description': event.description,
             'allDay': False,
             'backgroundColor': "#2c5364",
-            'borderColor': CATEGORY_COLORS.get(event.category, "#cccccc"),
+            'borderColor': tag_color,
             'textColor': '#ffffff',
             'editable': is_owner,
             'extendedProps': {
                 'creatorId': event.user.id,
                 'creatorName': event.user.username,
                 'isOwner': is_owner,
+                'category': event.category,
             }
         })
 
     return JsonResponse(calendar_events, safe=False)
+
 @login_required
 def user_search(request):
     """
@@ -406,14 +412,17 @@ def connect_user(request, user_id):
                 return redirect('user_search')
                 
             # Check if request already sent (either direction)
-            request_exists = ConnectionRequest.objects.filter(
-                (Q(sender=request.user, receiver=user_to_connect) | 
-                 Q(sender=user_to_connect, receiver=request.user)),
+            existing_request = ConnectionRequest.objects.filter(
+                Q(sender=request.user, receiver=user_to_connect) |
+                Q(sender=user_to_connect, receiver=request.user),
                 accepted=False
-            ).exists()
-            
-            if request_exists:
-                messages.info(request, f'Connection request already exists with {user_to_connect.username}')
+            ).first()
+
+            if existing_request:
+                # Update timestamp instead of creating a duplicate
+                existing_request.created_at = timezone.now()
+                existing_request.save()
+                messages.info(request, f"Connection request to {user_to_connect.username} refreshed.")
             else:
                 try:
                     # Create new connection request with transaction handling
